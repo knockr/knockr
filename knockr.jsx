@@ -417,7 +417,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="relative" style={{ height: 340 }}>
+      <div className="relative" style={{ height: "calc(100vh - 200px)" }}>
         {isLoaded ? (
           <GoogleMap
             mapContainerStyle={{ width: "100%", height: "100%" }}
@@ -427,35 +427,43 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
             onLoad={map => { mapRef.current = map; }}
           >
             {houses.map(house => {
-              const cfg    = STATUS_CONFIG[house.status];
-              const num    = String(house.number).split(" ")[0];
+              const cfg = STATUS_CONFIG[house.status];
+              const num = String(house.number).split(" ")[0];
               const isSelected = selectedHouse?.id === house.id;
               return (
-                <OverlayView key={house.id} position={xyToLatLng(house.x, house.y)} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+                <OverlayView
+                  key={house.id}
+                  position={xyToLatLng(house.x, house.y)}
+                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                >
                   <div
                     onClick={() => onSelectHouse(house)}
                     style={{
                       transform: "translate(-50%,-50%)",
                       background: cfg.color,
-                      opacity: house.status === "unvisited" ? 0.72 : 1,
-                      color: house.status === "unvisited" ? "#1a1a1a" : "#000",
-                      borderRadius: 5,
-                      minWidth: 28,
-                      height: 22,
-                      padding: "0 4px",
+                      opacity: house.status === "unvisited" ? 0.8 : 1,
+                      color: "#000",
+                      borderRadius: 6,
+                      minWidth: 32,
+                      height: 26,
+                      padding: "0 6px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 10,
-                      fontWeight: 800,
+                      fontSize: 12,
+                      fontWeight: 900,
                       fontFamily: "monospace",
                       cursor: "pointer",
-                      border: isSelected ? "2px solid #fff" : "2px solid rgba(0,0,0,0.35)",
-                      boxShadow: house.status !== "unvisited"
-                        ? `0 0 8px ${cfg.color}99, 0 1px 4px rgba(0,0,0,0.6)`
-                        : "0 1px 4px rgba(0,0,0,0.5)",
+                      border: isSelected ? "2.5px solid #fff" : "2px solid rgba(0,0,0,0.5)",
+                      boxShadow: isSelected
+                        ? `0 0 0 2px ${cfg.color}, 0 2px 8px rgba(0,0,0,0.8)`
+                        : house.status !== "unvisited"
+                          ? `0 0 10px ${cfg.color}bb, 0 2px 6px rgba(0,0,0,0.7)`
+                          : "0 2px 6px rgba(0,0,0,0.7)",
                       userSelect: "none",
                       whiteSpace: "nowrap",
+                      zIndex: 10,
+                      position: "relative",
                     }}
                   >
                     {num}
@@ -464,9 +472,9 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
               );
             })}
             <OverlayView position={gpsPos} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
-              <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 16, height: 16, pointerEvents: "none" }}>
-                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#00e5ff", border: "2px solid white", boxShadow: "0 0 12px #00e5ff" }} />
-                <div className="animate-ping" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#00e5ff", opacity: 0.3 }} />
+              <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 18, height: 18, pointerEvents: "none", zIndex: 20 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#00e5ff", border: "2.5px solid white", boxShadow: "0 0 16px #00e5ff" }} />
+                <div className="animate-ping" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#00e5ff", opacity: 0.35 }} />
               </div>
             </OverlayView>
           </GoogleMap>
