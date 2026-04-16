@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./src/supabase.js";
+import { useJsApiLoader, GoogleMap, Marker, OverlayView, Circle } from "@react-google-maps/api";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -51,6 +52,47 @@ const SERVICES = {
   "Sealing":           { color: "#34d399", bg: "#022c1a" },
   "Deck Staining":     { color: "#fbbf24", bg: "#1c1200" },
 };
+
+const MAP_DARK_STYLE = [
+  { elementType: "geometry",            stylers: [{ color: "#0d1117" }] },
+  { elementType: "labels.text.fill",    stylers: [{ color: "#6b7280" }] },
+  { elementType: "labels.text.stroke",  stylers: [{ color: "#0d1117" }] },
+  { featureType: "road",   elementType: "geometry",        stylers: [{ color: "#1f2937" }] },
+  { featureType: "road",   elementType: "geometry.stroke", stylers: [{ color: "#111827" }] },
+  { featureType: "water",  elementType: "geometry",        stylers: [{ color: "#0a0f1a" }] },
+  { featureType: "poi",    stylers: [{ visibility: "off" }] },
+  { featureType: "transit",stylers: [{ visibility: "off" }] },
+];
+
+// Real Toronto lat/lng for each neighbourhood slug
+const HOOD_LATLNG = {
+  annex:       { lat: 43.672, lng: -79.406 },
+  midtown:     { lat: 43.688, lng: -79.389 },
+  rosedale:    { lat: 43.680, lng: -79.376 },
+  foresthill:  { lat: 43.697, lng: -79.420 },
+  yorkdale:    { lat: 43.724, lng: -79.447 },
+  leaside:     { lat: 43.707, lng: -79.363 },
+  eastyork:    { lat: 43.692, lng: -79.337 },
+  downsview:   { lat: 43.745, lng: -79.477 },
+  weston:      { lat: 43.706, lng: -79.511 },
+  york:        { lat: 43.716, lng: -79.462 },
+  eglinton:    { lat: 43.700, lng: -79.448 },
+  davisville:  { lat: 43.697, lng: -79.390 },
+};
+
+// Maps house grid coords (x/y 0–100%) to a Toronto bounding box
+function xyToLatLng(x, y) {
+  return {
+    lat: 43.700 - (y / 100) * 0.05,
+    lng: -79.420 + (x / 100) * 0.07,
+  };
+}
+
+function makeMarkerSvg(color, dimmed) {
+  const op = dimmed ? 0.55 : 1;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><rect x="1" y="1" width="20" height="20" rx="3" fill="${color}" fill-opacity="${op}" stroke="#000" stroke-opacity="0.4" stroke-width="1"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 
 function formatDuration(s) {
   const m = Math.floor(s / 60); const sec = s % 60;
@@ -347,44 +389,62 @@ function LoginScreen({ onLogin }) {
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
 function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, sessLoading }) {
+  const [gpsPos, setGpsPos] = useState({ lat: 43.675, lng: -79.385 });
+  const watchRef = useRef(null);
+
+  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_KEY });
+
+  useEffect(() => {
+    if (!session || !navigator.geolocation) return;
+    watchRef.current = navigator.geolocation.watchPosition(
+      pos => setGpsPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true }
+    );
+    return () => { if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current); };
+  }, [session]);
+
   return (
     <div className="flex-1 flex flex-col">
-      <div className="relative flex-1 overflow-hidden" style={{ background: "#0d1117", minHeight: 340 }}>
-        {[{ name: "Elm Street", y: 20 }, { name: "Oak Avenue", y: 40 }, { name: "Maple Drive", y: 60 }, { name: "Cedar Blvd", y: 80 }].map(s => (
-          <div key={s.name} className="absolute w-full" style={{ top: `${s.y}%`, transform: "translateY(-50%)" }}>
-            <div className="absolute w-full h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
-            <span className="absolute text-gray-700 ml-1" style={{ fontSize: 9, top: -10 }}>{s.name}</span>
-          </div>
-        ))}
-        {[20, 40, 60, 80].map(x => <div key={x} className="absolute h-full w-px" style={{ left: `${x}%`, background: "rgba(255,255,255,0.03)" }} />)}
-
-        {houses.map(house => {
-          const cfg = STATUS_CONFIG[house.status];
-          return (
-            <button key={house.id} onClick={() => session && onSelectHouse(house)}
-              className="absolute flex items-center justify-center transition-transform hover:scale-125 active:scale-95"
-              style={{ left: `${house.x}%`, top: `${house.y}%`, transform: "translate(-50%,-50%)", cursor: session ? "pointer" : "default", zIndex: 10 }}>
-              <div className="rounded-sm flex items-center justify-center font-bold shadow-lg"
-                style={{
-                  width: 22, height: 22, background: cfg.color, color: house.status === "unvisited" ? "#666" : "#000", fontSize: 10,
-                  border: selectedHouse?.id === house.id ? "2px solid white" : "2px solid transparent",
-                  boxShadow: house.status !== "unvisited" ? `0 0 8px ${cfg.color}88` : "none",
-                }}>
-                {cfg.icon}
-              </div>
-            </button>
-          );
-        })}
-
-        {session && (
-          <div className="absolute z-20" style={{ left: `${gpsDot.x}%`, top: `${gpsDot.y}%`, transform: "translate(-50%,-50%)" }}>
-            <div className="w-4 h-4 rounded-full bg-cyan-400 border-2 border-white" style={{ boxShadow: "0 0 12px #00e5ff" }} />
-            <div className="absolute inset-0 w-4 h-4 rounded-full bg-cyan-400 opacity-30 animate-ping" />
+      <div className="relative" style={{ height: 340 }}>
+        {isLoaded ? (
+          <GoogleMap
+            mapContainerStyle={{ width: "100%", height: "100%" }}
+            center={{ lat: 43.675, lng: -79.385 }}
+            zoom={15}
+            options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
+          >
+            {houses.map(house => {
+              const cfg = STATUS_CONFIG[house.status];
+              return (
+                <Marker
+                  key={house.id}
+                  position={xyToLatLng(house.x, house.y)}
+                  icon={{
+                    url: makeMarkerSvg(cfg.color, house.status === "unvisited"),
+                    scaledSize: new window.google.maps.Size(22, 22),
+                    anchor: new window.google.maps.Point(11, 11),
+                  }}
+                  onClick={() => session && onSelectHouse(house)}
+                />
+              );
+            })}
+            {session && (
+              <OverlayView position={gpsPos} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+                <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 16, height: 16 }}>
+                  <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#00e5ff", border: "2px solid white", boxShadow: "0 0 12px #00e5ff" }} />
+                  <div className="animate-ping" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#00e5ff", opacity: 0.3 }} />
+                </div>
+              </OverlayView>
+            )}
+          </GoogleMap>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#0d1117" }}>
+            <div className="text-cyan-400 text-sm font-mono animate-pulse">Loading map…</div>
           </div>
         )}
-
         {!session && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", pointerEvents: "none", zIndex: 10 }}>
             <div className="text-center">
               <div className="text-gray-300 text-base font-bold mb-1">Ready to knock?</div>
               <div className="text-gray-600 text-xs">Hit Start Session below</div>
@@ -921,6 +981,8 @@ function HeatmapTab() {
   const [mode,    setMode]    = useState("response");
   const [hov,     setHov]     = useState(null);
 
+  const { isLoaded } = useJsApiLoader({ googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_KEY });
+
   useEffect(() => {
     supabase.from("neighborhoods").select("*").then(({ data }) => {
       setHoods(data || []); setLoading(false);
@@ -946,25 +1008,43 @@ function HeatmapTab() {
           </div>
         </div>
         <div className="flex flex-col lg:flex-row">
-          <div className="relative flex-1 p-3" style={{ background: "#0a0f1a", minHeight: 260 }}>
-            <svg viewBox="0 0 540 238" className="w-full" style={{ maxHeight: 290 }}>
-              {[0,1,2,3,4].map(i => <line key={`h${i}`} x1="0" y1={i*60} x2="540" y2={i*60} stroke="#ffffff07" strokeWidth="0.5"/>)}
-              {[0,1,2,3,4,5,6,7,8,9].map(i => <line key={`v${i}`} x1={i*60} y1="0" x2={i*60} y2="238" stroke="#ffffff07" strokeWidth="0.5"/>)}
-              {hoods.filter(n => n.path).map(n => {
-                const val    = n[metricKey];
-                const fill   = colorFn(val);
-                const isHov  = hov === n.slug;
-                const [cx, cy] = getCentroid(n.path);
-                return (
-                  <g key={n.slug} onMouseEnter={() => setHov(n.slug)} onMouseLeave={() => setHov(null)} style={{ cursor: "pointer" }}>
-                    <path d={n.path} fill={fill} fillOpacity={isHov ? 1 : 0.85} stroke={isHov ? "#fff" : "#060a14"} strokeWidth={isHov ? 1.5 : 0.8}
-                      style={{ filter: isHov ? `drop-shadow(0 0 6px ${fill})` : "none", transition: "all 0.12s" }} />
-                    <text x={cx} y={cy - 2} textAnchor="middle" dominantBaseline="middle" fill="rgba(255,255,255,0.95)" fontSize="8" fontWeight="700" style={{ pointerEvents: "none", fontFamily: "monospace" }}>{val}%</text>
-                    <text x={cx} y={cy + 9} textAnchor="middle" fill="rgba(255,255,255,0.38)" fontSize="5.5" style={{ pointerEvents: "none" }}>{n.name.split(" ")[0]}</text>
-                  </g>
-                );
-              })}
-            </svg>
+          <div className="relative flex-1" style={{ background: "#0a0f1a", height: 300 }}>
+            {isLoaded ? (
+              <GoogleMap
+                mapContainerStyle={{ width: "100%", height: "100%" }}
+                center={{ lat: 43.700, lng: -79.420 }}
+                zoom={12}
+                options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
+              >
+                {hoods.filter(n => HOOD_LATLNG[n.slug]).map(n => {
+                  const val   = n[metricKey];
+                  const fill  = colorFn(val);
+                  const isHov = hov === n.slug;
+                  const radius = 350 + (n.doors / 312) * 500;
+                  return (
+                    <Circle
+                      key={n.slug}
+                      center={HOOD_LATLNG[n.slug]}
+                      radius={radius}
+                      options={{
+                        fillColor: fill,
+                        fillOpacity: isHov ? 0.9 : 0.65,
+                        strokeColor: isHov ? "#ffffff" : fill,
+                        strokeOpacity: 0.8,
+                        strokeWeight: isHov ? 2 : 0.5,
+                      }}
+                      onMouseOver={() => setHov(n.slug)}
+                      onMouseOut={() => setHov(null)}
+                      onClick={() => setHov(hov === n.slug ? null : n.slug)}
+                    />
+                  );
+                })}
+              </GoogleMap>
+            ) : (
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div className="text-cyan-400 text-sm font-mono animate-pulse">Loading map…</div>
+              </div>
+            )}
             {hov && hoodMap[hov] && (
               <div className="absolute top-3 left-3 bg-gray-900 border border-gray-700 rounded-xl p-3 shadow-2xl text-xs" style={{ minWidth: 160, zIndex: 10 }}>
                 <div className="text-white font-bold mb-2">{hoodMap[hov].name}</div>
