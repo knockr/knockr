@@ -5,52 +5,30 @@ import { useJsApiLoader, GoogleMap, Marker, OverlayView, Circle } from "@react-g
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
-// Real addresses on Governors Rd, Toronto — curves SW to NE
-const GOVERNORS_RD = [
-  { number:  1, lat: 43.68870, lng: -79.36500 },
-  { number:  3, lat: 43.68875, lng: -79.36460 },
-  { number:  5, lat: 43.68880, lng: -79.36420 },
-  { number:  7, lat: 43.68885, lng: -79.36380 },
-  { number:  9, lat: 43.68890, lng: -79.36340 },
-  { number: 11, lat: 43.68895, lng: -79.36300 },
-  { number: 13, lat: 43.68900, lng: -79.36260 },
-  { number: 15, lat: 43.68905, lng: -79.36220 },
-  { number: 17, lat: 43.68910, lng: -79.36180 },
-  { number: 19, lat: 43.68915, lng: -79.36140 },
-  { number: 21, lat: 43.68920, lng: -79.36100 },
-  { number: 23, lat: 43.68925, lng: -79.36060 },
-  { number: 25, lat: 43.68930, lng: -79.36020 },
-  { number: 27, lat: 43.68935, lng: -79.35980 },
-  { number: 29, lat: 43.68940, lng: -79.35940 },
-  { number: 31, lat: 43.68945, lng: -79.35900 },
-  { number: 33, lat: 43.68950, lng: -79.35860 },
-  { number: 35, lat: 43.68955, lng: -79.35820 },
-  { number: 37, lat: 43.68960, lng: -79.35780 },
-  { number: 39, lat: 43.68965, lng: -79.35740 },
-  { number: 41, lat: 43.68970, lng: -79.35700 },
-  { number: 43, lat: 43.68975, lng: -79.35660 },
-  { number: 45, lat: 43.68980, lng: -79.35620 },
-  { number: 47, lat: 43.68985, lng: -79.35580 },
-  { number: 49, lat: 43.68990, lng: -79.35540 },
-  { number: 51, lat: 43.68995, lng: -79.35500 },
-  { number: 53, lat: 43.69000, lng: -79.35460 },
-  { number: 55, lat: 43.69005, lng: -79.35420 },
-  { number: 57, lat: 43.69010, lng: -79.35380 },
-  { number: 59, lat: 43.69015, lng: -79.35340 },
-];
+// Haversine distance in metres between two lat/lng points
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-function generateHouses() {
-  return GOVERNORS_RD.map((h, i) => ({
-    id: i + 1,
-    number: h.number,
-    street: "Governors Rd",
-    lat: h.lat,
-    lng: h.lng,
-    x: 0, y: 0,
-    status: "unvisited",
-    leadInfo: null,
-    dbId: null,
-  }));
+// Reverse geocode a lat/lng to { number, street } using Google Geocoding API
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.results?.[0]) {
+      const comps  = data.results[0].address_components;
+      const num    = comps.find(c => c.types.includes("street_number"))?.long_name || "";
+      const street = comps.find(c => c.types.includes("route"))?.long_name        || "Unknown St";
+      return { number: parseInt(num) || 0, street };
+    }
+  } catch (_) {}
+  return { number: 0, street: "Unknown St" };
 }
 
 const STATUS_CONFIG = {
@@ -101,20 +79,6 @@ const HOOD_LATLNG = {
   davisville:  { lat: 43.697, lng: -79.390 },
 };
 
-// Spreads houses in a ~220m grid centered on the rep's GPS position
-function xyToLatLng(x, y, center = { lat: 43.675, lng: -79.385 }) {
-  const span = 0.002;
-  return {
-    lat: center.lat + (0.5 - y / 100) * span,
-    lng: center.lng + (x / 100 - 0.5) * span,
-  };
-}
-
-function makeMarkerSvg(color, dimmed) {
-  const op = dimmed ? 0.55 : 1;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22"><rect x="1" y="1" width="20" height="20" rx="3" fill="${color}" fill-opacity="${op}" stroke="#000" stroke-opacity="0.4" stroke-width="1"/></svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
 
 function formatDuration(s) {
   const m = Math.floor(s / 60); const sec = s % 60;
@@ -210,26 +174,18 @@ export default function KnockrApp() {
 
   const handleStartSession = async () => {
     setSessLoading(true);
-    const newHouses = generateHouses();
     const { data: sess, error } = await supabase
       .from("sessions")
-      .insert({ rep_id: user.id, neighborhood: "Governors Rd, Toronto", started_at: new Date().toISOString() })
+      .insert({ rep_id: user.id, neighborhood: "Current Location", started_at: new Date().toISOString() })
       .select().single();
     if (error) { console.error(error); setSessLoading(false); return; }
-
-    const { data: saved } = await supabase
-      .from("houses")
-      .insert(newHouses.map(h => ({
-        session_id: sess.id, rep_id: user.id,
-        number: h.number, street: h.street,
-        lat: h.lat, lng: h.lng,
-        x: 0, y: 0, status: "unvisited",
-      })))
-      .select();
-
-    setHouses(newHouses.map((h, i) => ({ ...h, dbId: saved?.[i]?.id })));
-    setSession({ id: sess.id, startTime: Date.now(), neighborhood: "Governors Rd, Toronto" });
+    setHouses([]);
+    setSession({ id: sess.id, startTime: Date.now(), neighborhood: "Current Location" });
     setSessLoading(false);
+  };
+
+  const handleAddHouse = (house) => {
+    setHouses(prev => [...prev, house]);
   };
 
   const handleEndSession = async () => {
@@ -319,12 +275,13 @@ export default function KnockrApp() {
       </div>
 
       {repTab === "knock" && (
-        <KnockTab user={user} houses={houses} session={session} gpsDot={gpsDot} metrics={metrics}
+        <KnockTab user={user} houses={houses} session={session} metrics={metrics}
           selectedHouse={selectedHouse} onSelectHouse={setSelectedHouse}
           sessLoading={sessLoading}
           onStartSession={handleStartSession}
           onEndSession={handleEndSession}
-          onUpdateHouse={handleUpdateHouse} />
+          onUpdateHouse={handleUpdateHouse}
+          onAddHouse={handleAddHouse} />
       )}
       {repTab === "stats" && <StatsTab user={user} />}
     </div>
@@ -412,47 +369,98 @@ function LoginScreen({ onLogin }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, sessLoading }) {
-  const [gpsPos, setGpsPos] = useState({ lat: 43.68940, lng: -79.35900 }); // Governors Rd midpoint
-  const mapRef  = useRef(null);
+function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, sessLoading }) {
+  const [gpsPos,   setGpsPos]   = useState({ lat: 43.6894, lng: -79.3590 });
+  const [toast,    setToast]    = useState(null);
+  const [creating, setCreating] = useState(false);
+  const mapRef   = useRef(null);
   const watchRef = useRef(null);
 
   const { isLoaded } = useJsApiLoader({ googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_KEY });
 
-  // Get initial position + start live tracking as soon as component mounts
+  // Get position immediately and watch it continuously
   useEffect(() => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       pos => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setGpsPos(loc);
-        if (mapRef.current) mapRef.current.panTo(loc);
+        mapRef.current?.panTo(loc);
       },
       () => {},
       { enableHighAccuracy: true }
     );
     watchRef.current = navigator.geolocation.watchPosition(
-      pos => setGpsPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      pos => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setGpsPos(loc);
+        mapRef.current?.panTo(loc);
+      },
       () => {},
       { enableHighAccuracy: true }
     );
-    return () => { if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current); };
+    return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
   }, []);
+
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  async function handleMapClick(e) {
+    if (!session || creating) return;
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    const dist = haversineDistance(gpsPos.lat, gpsPos.lng, lat, lng);
+    if (dist > 50) {
+      showToast("You must be near this house to log it.");
+      return;
+    }
+    setCreating(true);
+    const { number, street } = await reverseGeocode(lat, lng);
+    const { data: saved, error } = await supabase.from("houses").insert({
+      session_id: session.id,
+      rep_id:     user.id,
+      number:     number || 0,
+      street:     street,
+      lat, lng,
+      x: 0, y: 0,
+      status: "unvisited",
+    }).select().single();
+    if (!error && saved) {
+      const house = {
+        id: saved.id, dbId: saved.id,
+        number: saved.number, street: saved.street,
+        lat: saved.lat, lng: saved.lng,
+        x: 0, y: 0,
+        status: "unvisited", leadInfo: null,
+      };
+      onAddHouse(house);
+      onSelectHouse(house);
+    }
+    setCreating(false);
+  }
 
   return (
     <div className="flex-1 flex flex-col">
       <div className="relative" style={{ height: "calc(100vh - 200px)" }}>
         {isLoaded ? (
           <GoogleMap
-            mapContainerStyle={{ width: "100%", height: "100%" }}
+            mapContainerStyle={{ width: "100%", height: "100%", cursor: session ? "crosshair" : "default" }}
             center={gpsPos}
-            zoom={18}
-            options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
+            zoom={20}
+            options={{
+              styles: MAP_DARK_STYLE,
+              disableDefaultUI: true,
+              gestureHandling: "greedy",
+              clickableIcons: false,
+              minZoom: 18,
+            }}
             onLoad={map => { mapRef.current = map; }}
+            onClick={handleMapClick}
           >
             {houses.map(house => {
               const cfg = STATUS_CONFIG[house.status];
-              const num = String(house.number).split(" ")[0];
               const isSelected = selectedHouse?.id === house.id;
               return (
                 <OverlayView
@@ -461,7 +469,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
                   mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                 >
                   <div
-                    onClick={() => onSelectHouse(house)}
+                    onClick={e => { e.stopPropagation(); onSelectHouse(house); }}
                     style={{
                       transform: "translate(-50%,-50%)",
                       position: "relative",
@@ -487,7 +495,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {num}
+                    {house.number || "?"}
                   </div>
                 </OverlayView>
               );
@@ -504,14 +512,37 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
             <div className="text-cyan-400 text-sm font-mono animate-pulse">Loading map…</div>
           </div>
         )}
-        {!session && (
-          <div className="absolute bottom-3 left-0 right-0 flex justify-center" style={{ pointerEvents: "none", zIndex: 10 }}>
-            <div className="bg-gray-900 bg-opacity-80 border border-gray-700 rounded-xl px-4 py-2 text-center">
-              <div className="text-gray-300 text-sm font-bold">Ready to knock?</div>
-              <div className="text-gray-500 text-xs">Hit Start Session below</div>
+
+        {/* Toast notification */}
+        {toast && (
+          <div className="absolute top-4 left-0 right-0 flex justify-center" style={{ zIndex: 30, pointerEvents: "none" }}>
+            <div style={{ background: "#f87171", color: "#000", borderRadius: 10, padding: "8px 16px", fontWeight: 700, fontSize: 13, fontFamily: "monospace", boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+              {toast}
             </div>
           </div>
         )}
+
+        {/* Creating indicator */}
+        {creating && (
+          <div className="absolute top-4 left-0 right-0 flex justify-center" style={{ zIndex: 30, pointerEvents: "none" }}>
+            <div style={{ background: "#1f2937", color: "#00e5ff", border: "1px solid #00e5ff44", borderRadius: 10, padding: "8px 16px", fontWeight: 700, fontSize: 13, fontFamily: "monospace" }}>
+              Getting address…
+            </div>
+          </div>
+        )}
+
+        {/* Hint overlay */}
+        <div className="absolute bottom-3 left-0 right-0 flex justify-center" style={{ pointerEvents: "none", zIndex: 10 }}>
+          <div className="bg-gray-900 bg-opacity-80 border border-gray-700 rounded-xl px-4 py-2 text-center">
+            {session
+              ? <div className="text-cyan-400 text-xs font-bold">Tap near a house to log it</div>
+              : <>
+                  <div className="text-gray-300 text-sm font-bold">Ready to knock?</div>
+                  <div className="text-gray-500 text-xs">Hit Start Session below</div>
+                </>
+            }
+          </div>
+        </div>
       </div>
 
       {session && (
