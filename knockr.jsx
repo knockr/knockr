@@ -390,19 +390,30 @@ function LoginScreen({ onLogin }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, sessLoading }) {
   const [gpsPos, setGpsPos] = useState({ lat: 43.675, lng: -79.385 });
+  const mapRef  = useRef(null);
   const watchRef = useRef(null);
 
   const { isLoaded } = useJsApiLoader({ googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_KEY });
 
+  // Get initial position + start live tracking as soon as component mounts
   useEffect(() => {
-    if (!session || !navigator.geolocation) return;
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setGpsPos(loc);
+        if (mapRef.current) mapRef.current.panTo(loc);
+      },
+      () => {},
+      { enableHighAccuracy: true }
+    );
     watchRef.current = navigator.geolocation.watchPosition(
       pos => setGpsPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => {},
       { enableHighAccuracy: true }
     );
     return () => { if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current); };
-  }, [session]);
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -410,33 +421,54 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
         {isLoaded ? (
           <GoogleMap
             mapContainerStyle={{ width: "100%", height: "100%" }}
-            center={{ lat: 43.675, lng: -79.385 }}
-            zoom={15}
+            center={gpsPos}
+            zoom={18}
             options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
+            onLoad={map => { mapRef.current = map; }}
           >
             {houses.map(house => {
-              const cfg = STATUS_CONFIG[house.status];
+              const cfg    = STATUS_CONFIG[house.status];
+              const num    = String(house.number).split(" ")[0];
+              const isSelected = selectedHouse?.id === house.id;
               return (
-                <Marker
-                  key={house.id}
-                  position={xyToLatLng(house.x, house.y)}
-                  icon={{
-                    url: makeMarkerSvg(cfg.color, house.status === "unvisited"),
-                    scaledSize: new window.google.maps.Size(22, 22),
-                    anchor: new window.google.maps.Point(11, 11),
-                  }}
-                  onClick={() => session && onSelectHouse(house)}
-                />
+                <OverlayView key={house.id} position={xyToLatLng(house.x, house.y)} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+                  <div
+                    onClick={() => onSelectHouse(house)}
+                    style={{
+                      transform: "translate(-50%,-50%)",
+                      background: cfg.color,
+                      opacity: house.status === "unvisited" ? 0.72 : 1,
+                      color: house.status === "unvisited" ? "#1a1a1a" : "#000",
+                      borderRadius: 5,
+                      minWidth: 28,
+                      height: 22,
+                      padding: "0 4px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      fontFamily: "monospace",
+                      cursor: "pointer",
+                      border: isSelected ? "2px solid #fff" : "2px solid rgba(0,0,0,0.35)",
+                      boxShadow: house.status !== "unvisited"
+                        ? `0 0 8px ${cfg.color}99, 0 1px 4px rgba(0,0,0,0.6)`
+                        : "0 1px 4px rgba(0,0,0,0.5)",
+                      userSelect: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {num}
+                  </div>
+                </OverlayView>
               );
             })}
-            {session && (
-              <OverlayView position={gpsPos} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
-                <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 16, height: 16 }}>
-                  <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#00e5ff", border: "2px solid white", boxShadow: "0 0 12px #00e5ff" }} />
-                  <div className="animate-ping" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#00e5ff", opacity: 0.3 }} />
-                </div>
-              </OverlayView>
-            )}
+            <OverlayView position={gpsPos} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+              <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 16, height: 16, pointerEvents: "none" }}>
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#00e5ff", border: "2px solid white", boxShadow: "0 0 12px #00e5ff" }} />
+                <div className="animate-ping" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#00e5ff", opacity: 0.3 }} />
+              </div>
+            </OverlayView>
           </GoogleMap>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#0d1117" }}>
@@ -444,10 +476,10 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
           </div>
         )}
         {!session && (
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", pointerEvents: "none", zIndex: 10 }}>
-            <div className="text-center">
-              <div className="text-gray-300 text-base font-bold mb-1">Ready to knock?</div>
-              <div className="text-gray-600 text-xs">Hit Start Session below</div>
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center" style={{ pointerEvents: "none", zIndex: 10 }}>
+            <div className="bg-gray-900 bg-opacity-80 border border-gray-700 rounded-xl px-4 py-2 text-center">
+              <div className="text-gray-300 text-sm font-bold">Ready to knock?</div>
+              <div className="text-gray-500 text-xs">Hit Start Session below</div>
             </div>
           </div>
         )}
