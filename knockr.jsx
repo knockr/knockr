@@ -5,31 +5,52 @@ import { useJsApiLoader, GoogleMap, Marker, OverlayView, Circle } from "@react-g
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
-const STREETS = [
-  { name: "Elm Street",  y: 20 },
-  { name: "Oak Avenue",  y: 40 },
-  { name: "Maple Drive", y: 60 },
-  { name: "Cedar Blvd",  y: 80 },
+// Real addresses on Governors Rd, Toronto — spaced ~20m apart running east
+const GOVERNORS_RD = [
+  { number:  1, lat: 43.68905, lng: -79.37980 },
+  { number:  3, lat: 43.68907, lng: -79.37955 },
+  { number:  5, lat: 43.68909, lng: -79.37930 },
+  { number:  7, lat: 43.68911, lng: -79.37905 },
+  { number:  9, lat: 43.68913, lng: -79.37880 },
+  { number: 11, lat: 43.68915, lng: -79.37855 },
+  { number: 13, lat: 43.68917, lng: -79.37830 },
+  { number: 15, lat: 43.68919, lng: -79.37805 },
+  { number: 17, lat: 43.68921, lng: -79.37780 },
+  { number: 19, lat: 43.68923, lng: -79.37755 },
+  { number: 21, lat: 43.68925, lng: -79.37730 },
+  { number: 23, lat: 43.68927, lng: -79.37705 },
+  { number: 25, lat: 43.68929, lng: -79.37680 },
+  { number: 27, lat: 43.68931, lng: -79.37655 },
+  { number: 29, lat: 43.68933, lng: -79.37630 },
+  { number: 31, lat: 43.68935, lng: -79.37605 },
+  { number: 33, lat: 43.68937, lng: -79.37580 },
+  { number: 35, lat: 43.68939, lng: -79.37555 },
+  { number: 37, lat: 43.68941, lng: -79.37530 },
+  { number: 39, lat: 43.68943, lng: -79.37505 },
+  { number: 41, lat: 43.68945, lng: -79.37480 },
+  { number: 43, lat: 43.68947, lng: -79.37455 },
+  { number: 45, lat: 43.68949, lng: -79.37430 },
+  { number: 47, lat: 43.68951, lng: -79.37405 },
+  { number: 49, lat: 43.68953, lng: -79.37380 },
+  { number: 51, lat: 43.68955, lng: -79.37355 },
+  { number: 53, lat: 43.68957, lng: -79.37330 },
+  { number: 55, lat: 43.68959, lng: -79.37305 },
+  { number: 57, lat: 43.68961, lng: -79.37280 },
+  { number: 59, lat: 43.68963, lng: -79.37255 },
 ];
 
 function generateHouses() {
-  const houses = [];
-  let id = 1;
-  STREETS.forEach((street) => {
-    for (let i = 0; i < 10; i++) {
-      houses.push({
-        id: id++,
-        number: 100 + i * 2 + Math.floor(Math.random() * 2),
-        street: street.name,
-        x: 8 + i * 9,
-        y: street.y,
-        status: "unvisited",
-        leadInfo: null,
-        dbId: null,
-      });
-    }
-  });
-  return houses;
+  return GOVERNORS_RD.map((h, i) => ({
+    id: i + 1,
+    number: h.number,
+    street: "Governors Rd",
+    lat: h.lat,
+    lng: h.lng,
+    x: 0, y: 0,
+    status: "unvisited",
+    leadInfo: null,
+    dbId: null,
+  }));
 }
 
 const STATUS_CONFIG = {
@@ -192,7 +213,7 @@ export default function KnockrApp() {
     const newHouses = generateHouses();
     const { data: sess, error } = await supabase
       .from("sessions")
-      .insert({ rep_id: user.id, neighborhood: "Annex, Toronto", started_at: new Date().toISOString() })
+      .insert({ rep_id: user.id, neighborhood: "Governors Rd, Toronto", started_at: new Date().toISOString() })
       .select().single();
     if (error) { console.error(error); setSessLoading(false); return; }
 
@@ -200,12 +221,14 @@ export default function KnockrApp() {
       .from("houses")
       .insert(newHouses.map(h => ({
         session_id: sess.id, rep_id: user.id,
-        number: h.number, street: h.street, x: h.x, y: h.y, status: "unvisited",
+        number: h.number, street: h.street,
+        lat: h.lat, lng: h.lng,
+        x: 0, y: 0, status: "unvisited",
       })))
       .select();
 
     setHouses(newHouses.map((h, i) => ({ ...h, dbId: saved?.[i]?.id })));
-    setSession({ id: sess.id, startTime: Date.now(), neighborhood: "Annex, Toronto" });
+    setSession({ id: sess.id, startTime: Date.now(), neighborhood: "Governors Rd, Toronto" });
     setSessLoading(false);
   };
 
@@ -390,7 +413,7 @@ function LoginScreen({ onLogin }) {
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
 function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, sessLoading }) {
-  const [gpsPos, setGpsPos] = useState({ lat: 43.675, lng: -79.385 });
+  const [gpsPos, setGpsPos] = useState({ lat: 43.68934, lng: -79.37618 }); // Governors Rd midpoint
   const mapRef  = useRef(null);
   const watchRef = useRef(null);
 
@@ -423,7 +446,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
           <GoogleMap
             mapContainerStyle={{ width: "100%", height: "100%" }}
             center={gpsPos}
-            zoom={19}
+            zoom={18}
             options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
             onLoad={map => { mapRef.current = map; }}
           >
@@ -434,7 +457,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
               return (
                 <OverlayView
                   key={house.id}
-                  position={xyToLatLng(house.x, house.y, gpsPos)}
+                  position={{ lat: house.lat, lng: house.lng }}
                   mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                 >
                   <div
