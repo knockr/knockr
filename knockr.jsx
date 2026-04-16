@@ -80,11 +80,12 @@ const HOOD_LATLNG = {
   davisville:  { lat: 43.697, lng: -79.390 },
 };
 
-// Maps house grid coords (x/y 0–100%) to a Toronto bounding box
-function xyToLatLng(x, y) {
+// Spreads houses in a ~220m grid centered on the rep's GPS position
+function xyToLatLng(x, y, center = { lat: 43.675, lng: -79.385 }) {
+  const span = 0.002;
   return {
-    lat: 43.700 - (y / 100) * 0.05,
-    lng: -79.420 + (x / 100) * 0.07,
+    lat: center.lat + (0.5 - y / 100) * span,
+    lng: center.lng + (x / 100 - 0.5) * span,
   };
 }
 
@@ -422,7 +423,7 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
           <GoogleMap
             mapContainerStyle={{ width: "100%", height: "100%" }}
             center={gpsPos}
-            zoom={18}
+            zoom={19}
             options={{ styles: MAP_DARK_STYLE, disableDefaultUI: true, gestureHandling: "greedy", clickableIcons: false }}
             onLoad={map => { mapRef.current = map; }}
           >
@@ -433,37 +434,34 @@ function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSel
               return (
                 <OverlayView
                   key={house.id}
-                  position={xyToLatLng(house.x, house.y)}
+                  position={xyToLatLng(house.x, house.y, gpsPos)}
                   mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                 >
                   <div
                     onClick={() => onSelectHouse(house)}
                     style={{
                       transform: "translate(-50%,-50%)",
+                      position: "relative",
+                      zIndex: 10,
                       background: cfg.color,
-                      opacity: house.status === "unvisited" ? 0.8 : 1,
-                      color: "#000",
+                      color: "#fff",
                       borderRadius: 6,
-                      minWidth: 32,
-                      height: 26,
-                      padding: "0 6px",
+                      minWidth: 36,
+                      height: 30,
+                      padding: "0 7px",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: 900,
                       fontFamily: "monospace",
                       cursor: "pointer",
-                      border: isSelected ? "2.5px solid #fff" : "2px solid rgba(0,0,0,0.5)",
+                      border: isSelected ? "3px solid #00e5ff" : "2px solid #fff",
                       boxShadow: isSelected
-                        ? `0 0 0 2px ${cfg.color}, 0 2px 8px rgba(0,0,0,0.8)`
-                        : house.status !== "unvisited"
-                          ? `0 0 10px ${cfg.color}bb, 0 2px 6px rgba(0,0,0,0.7)`
-                          : "0 2px 6px rgba(0,0,0,0.7)",
+                        ? `0 0 0 2px ${cfg.color}, 0 3px 10px rgba(0,0,0,0.9)`
+                        : "0 3px 8px rgba(0,0,0,0.8)",
                       userSelect: "none",
                       whiteSpace: "nowrap",
-                      zIndex: 10,
-                      position: "relative",
                     }}
                   >
                     {num}
