@@ -5,38 +5,38 @@ import { useJsApiLoader, GoogleMap, Marker, OverlayView, Circle } from "@react-g
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
-// Real addresses on Governors Rd, Toronto — spaced ~20m apart running east
+// Real addresses on Governors Rd, Toronto — curves SW to NE
 const GOVERNORS_RD = [
-  { number:  1, lat: 43.68905, lng: -79.37980 },
-  { number:  3, lat: 43.68907, lng: -79.37955 },
-  { number:  5, lat: 43.68909, lng: -79.37930 },
-  { number:  7, lat: 43.68911, lng: -79.37905 },
-  { number:  9, lat: 43.68913, lng: -79.37880 },
-  { number: 11, lat: 43.68915, lng: -79.37855 },
-  { number: 13, lat: 43.68917, lng: -79.37830 },
-  { number: 15, lat: 43.68919, lng: -79.37805 },
-  { number: 17, lat: 43.68921, lng: -79.37780 },
-  { number: 19, lat: 43.68923, lng: -79.37755 },
-  { number: 21, lat: 43.68925, lng: -79.37730 },
-  { number: 23, lat: 43.68927, lng: -79.37705 },
-  { number: 25, lat: 43.68929, lng: -79.37680 },
-  { number: 27, lat: 43.68931, lng: -79.37655 },
-  { number: 29, lat: 43.68933, lng: -79.37630 },
-  { number: 31, lat: 43.68935, lng: -79.37605 },
-  { number: 33, lat: 43.68937, lng: -79.37580 },
-  { number: 35, lat: 43.68939, lng: -79.37555 },
-  { number: 37, lat: 43.68941, lng: -79.37530 },
-  { number: 39, lat: 43.68943, lng: -79.37505 },
-  { number: 41, lat: 43.68945, lng: -79.37480 },
-  { number: 43, lat: 43.68947, lng: -79.37455 },
-  { number: 45, lat: 43.68949, lng: -79.37430 },
-  { number: 47, lat: 43.68951, lng: -79.37405 },
-  { number: 49, lat: 43.68953, lng: -79.37380 },
-  { number: 51, lat: 43.68955, lng: -79.37355 },
-  { number: 53, lat: 43.68957, lng: -79.37330 },
-  { number: 55, lat: 43.68959, lng: -79.37305 },
-  { number: 57, lat: 43.68961, lng: -79.37280 },
-  { number: 59, lat: 43.68963, lng: -79.37255 },
+  { number:  1, lat: 43.68870, lng: -79.36500 },
+  { number:  3, lat: 43.68875, lng: -79.36460 },
+  { number:  5, lat: 43.68880, lng: -79.36420 },
+  { number:  7, lat: 43.68885, lng: -79.36380 },
+  { number:  9, lat: 43.68890, lng: -79.36340 },
+  { number: 11, lat: 43.68895, lng: -79.36300 },
+  { number: 13, lat: 43.68900, lng: -79.36260 },
+  { number: 15, lat: 43.68905, lng: -79.36220 },
+  { number: 17, lat: 43.68910, lng: -79.36180 },
+  { number: 19, lat: 43.68915, lng: -79.36140 },
+  { number: 21, lat: 43.68920, lng: -79.36100 },
+  { number: 23, lat: 43.68925, lng: -79.36060 },
+  { number: 25, lat: 43.68930, lng: -79.36020 },
+  { number: 27, lat: 43.68935, lng: -79.35980 },
+  { number: 29, lat: 43.68940, lng: -79.35940 },
+  { number: 31, lat: 43.68945, lng: -79.35900 },
+  { number: 33, lat: 43.68950, lng: -79.35860 },
+  { number: 35, lat: 43.68955, lng: -79.35820 },
+  { number: 37, lat: 43.68960, lng: -79.35780 },
+  { number: 39, lat: 43.68965, lng: -79.35740 },
+  { number: 41, lat: 43.68970, lng: -79.35700 },
+  { number: 43, lat: 43.68975, lng: -79.35660 },
+  { number: 45, lat: 43.68980, lng: -79.35620 },
+  { number: 47, lat: 43.68985, lng: -79.35580 },
+  { number: 49, lat: 43.68990, lng: -79.35540 },
+  { number: 51, lat: 43.68995, lng: -79.35500 },
+  { number: 53, lat: 43.69000, lng: -79.35460 },
+  { number: 55, lat: 43.69005, lng: -79.35420 },
+  { number: 57, lat: 43.69010, lng: -79.35380 },
+  { number: 59, lat: 43.69015, lng: -79.35340 },
 ];
 
 function generateHouses() {
@@ -413,7 +413,7 @@ function LoginScreen({ onLogin }) {
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
 function KnockTab({ user, houses, session, gpsDot, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, sessLoading }) {
-  const [gpsPos, setGpsPos] = useState({ lat: 43.68934, lng: -79.37618 }); // Governors Rd midpoint
+  const [gpsPos, setGpsPos] = useState({ lat: 43.68940, lng: -79.35900 }); // Governors Rd midpoint
   const mapRef  = useRef(null);
   const watchRef = useRef(null);
 
