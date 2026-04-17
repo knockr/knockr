@@ -148,10 +148,12 @@ export default function KnockrApp() {
     return () => clearInterval(iv);
   }, [session]);
 
-  // ── Timer ───────────────────────────────────────────────────────────────────
+  // ── Timer — computes from real wall-clock startTime for accuracy ────────────
   useEffect(() => {
     if (session && !timerRef.current) {
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      timerRef.current = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - session.startTime) / 1000));
+      }, 1000);
     } else if (!session) {
       clearInterval(timerRef.current); timerRef.current = null; setElapsed(0);
     }
@@ -212,7 +214,7 @@ export default function KnockrApp() {
     if (!house?.dbId) return;
 
     await supabase.from("houses")
-      .update({ status: updates.status, updated_at: new Date().toISOString() })
+      .update({ status: updates.status, notes: updates.notes || "", updated_at: new Date().toISOString() })
       .eq("id", house.dbId);
 
     if (updates.status === "lead" && updates.leadInfo) {
@@ -589,7 +591,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 // HOUSE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 function HouseModal({ house, onUpdate, onClose }) {
-  const [status, setStatus] = useState(house.status);
+  const [status,   setStatus]   = useState(house.status);
+  const [notes,    setNotes]    = useState("");
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [leadInfo, setLeadInfo] = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
 
@@ -611,7 +614,7 @@ function HouseModal({ house, onUpdate, onClose }) {
           <button onClick={onClose} className="text-gray-500 text-2xl leading-none">×</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           {statusButtons.map(btn => (
             <button key={btn.key} onClick={() => { setStatus(btn.key); setShowLeadForm(btn.key === "lead"); }}
               className="py-3 rounded-xl text-sm font-bold transition-all border-2"
@@ -620,6 +623,19 @@ function HouseModal({ house, onUpdate, onClose }) {
             </button>
           ))}
         </div>
+
+        {status !== "unvisited" && (
+          <div className="mb-4">
+            <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
+            <textarea
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-500 resize-none transition-colors"
+              rows={3}
+              placeholder="Add notes (optional)..."
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        )}
 
         {showLeadForm && (
           <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-blue-900">
@@ -666,14 +682,14 @@ function HouseModal({ house, onUpdate, onClose }) {
               </div>
             </div>
             <div>
-              <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Note</label>
+              <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Lead Note</label>
               <textarea className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
                 rows={2} placeholder="Any details…" value={leadInfo.note} onChange={e => setLeadInfo({ ...leadInfo, note: e.target.value })} />
             </div>
           </div>
         )}
 
-        <button onClick={() => onUpdate(house.id, { status, leadInfo: status === "lead" ? leadInfo : null })}
+        <button onClick={() => onUpdate(house.id, { status, notes, leadInfo: status === "lead" ? leadInfo : null })}
           disabled={status === "unvisited"}
           className="w-full py-3 rounded-xl font-black text-sm tracking-widest uppercase transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
           style={{ background: "linear-gradient(135deg,#00e5ff,#0070ff)", color: "#000" }}>
@@ -960,7 +976,7 @@ function SummaryScreen({ metrics, elapsed, user, onDone, onLogout }) {
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="text-cyan-400 font-black text-2xl tracking-tighter">SESSION COMPLETE</div>
-          <div className="text-gray-500 text-xs mt-1">{user?.name} · Annex, Toronto</div>
+          <div className="text-gray-500 text-xs mt-1">{user?.name} · Current Location</div>
         </div>
         <button onClick={onLogout} className="text-gray-600 hover:text-gray-400 text-xs">Logout</button>
       </div>
