@@ -15,7 +15,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Reverse geocode using the Maps JS Geocoder (respects JS API key restrictions)
+// Reverse geocode a tap point → { number, street }
 function reverseGeocode(lat, lng) {
   return new Promise(resolve => {
     try {
@@ -31,6 +31,25 @@ function reverseGeocode(lat, lng) {
       });
     } catch (_) {
       resolve({ number: 0, street: "Unknown St" });
+    }
+  });
+}
+
+// Forward geocode a street address → precise { lat, lng } of that house
+function forwardGeocode(number, street) {
+  return new Promise(resolve => {
+    try {
+      const address = `${number} ${street}, Toronto, ON`;
+      new window.google.maps.Geocoder().geocode({ address }, (results, status) => {
+        if (status === "OK" && results?.[0]?.geometry?.location) {
+          const loc = results[0].geometry.location;
+          resolve({ lat: loc.lat(), lng: loc.lng() });
+        } else {
+          resolve(null);
+        }
+      });
+    } catch (_) {
+      resolve(null);
     }
   });
 }
@@ -414,24 +433,46 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 
   async function handleMapClick(e) {
     if (!session || creating) return;
-    const lat = e.latLng.lat();
-    const lng = e.latLng.lng();
-    const dist = haversineDistance(gpsPos.lat, gpsPos.lng, lat, lng);
-    if (dist > 50) {
+    const tapLat = e.latLng.lat();
+    const tapLng = e.latLng.lng();
+
+    // Proximity check — rep must be within 50m of the tap
+    if (haversineDistance(gpsPos.lat, gpsPos.lng, tapLat, tapLng) > 50) {
       showToast("You must be near this house to log it.");
       return;
     }
+
     setCreating(true);
-    const { number, street } = await reverseGeocode(lat, lng);
+
+    // Step 1: reverse geocode the tap to find the nearest real address
+    const { number, street } = await reverseGeocode(tapLat, tapLng);
+
+    // Duplicate check — same address already logged this session?
+    const alreadyLogged = houses.some(
+      h => h.number === number && h.street.toLowerCase() === street.toLowerCase()
+    );
+    if (alreadyLogged) {
+      showToast("This house is already logged.");
+      setCreating(false);
+      return;
+    }
+
+    // Step 2: forward geocode to snap the marker to the exact house position
+    const snapped = await forwardGeocode(number, street);
+    const finalLat = snapped?.lat ?? tapLat;
+    const finalLng = snapped?.lng ?? tapLng;
+
     const { data: saved, error } = await supabase.from("houses").insert({
       session_id: session.id,
       rep_id:     user.id,
       number:     number || 0,
-      street:     street,
-      lat, lng,
+      street,
+      lat: finalLat,
+      lng: finalLng,
       x: 0, y: 0,
       status: "unvisited",
     }).select().single();
+
     if (!error && saved) {
       const house = {
         id: saved.id, dbId: saved.id,
