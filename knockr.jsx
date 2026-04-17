@@ -924,64 +924,71 @@ function HouseModal({ house, onUpdate, onClose }) {
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-white font-bold text-lg">{house.number} {house.street}</span>
-              {/* History button — always clickable; greyed only when confirmed empty */}
-              {historyReady && history.length === 0 ? (
-                <span title="No previous visits"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border border-gray-800 text-gray-700 cursor-not-allowed select-none">
-                  🕐 No History
-                </span>
-              ) : (
-                <button onClick={() => setHistoryOpen(o => !o)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border transition-all"
-                  style={historyOpen
-                    ? { background: "#0d1f14", color: "#34d399", borderColor: "#34d399" }
-                    : { color: "#6b7280", borderColor: "#374151" }}>
-                  🕐 {!historyReady ? "History" : `History (${history.length})`}
-                </button>
-              )}
+              {/* History button — always a clickable toggle */}
+              <button onClick={() => setHistoryOpen(o => !o)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border transition-all"
+                style={historyOpen
+                  ? { background: "#0d1f14", color: "#34d399", borderColor: "#34d399" }
+                  : { color: "#6b7280", borderColor: "#374151" }}>
+                🕐 History
+              </button>
             </div>
             <div className="text-gray-500 text-xs">Select an outcome</div>
           </div>
           <button onClick={onClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
         </div>
 
-        {/* History dropdown — always renders when open; loading/empty states inside */}
-        {historyOpen && (
-          <div className="mb-4 rounded-xl overflow-hidden border border-gray-800" style={{ background: "#0d1117" }}>
-            <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
-              <span className="text-gray-400 text-xs font-bold tracking-widest uppercase">Knock History</span>
-              {historyReady && <span className="text-gray-600 text-xs">{history.length} knock{history.length !== 1 ? "s" : ""}</span>}
-            </div>
-            <div className="p-2 space-y-1.5">
-              {!historyReady ? (
-                <div className="px-2 py-3 text-gray-500 text-xs font-mono animate-pulse">Loading…</div>
-              ) : history.length === 0 ? (
-                <div className="px-2 py-3 text-gray-600 text-xs">No previous visits recorded.</div>
-              ) : (
-                history.map(k => {
-                  const scfg = STATUS_CONFIG[k.status];
-                  return (
-                    <div key={k.id} className="rounded-lg overflow-hidden flex"
-                      style={{ background: "#111827", borderLeft: `3px solid ${scfg?.color || "#4a5568"}` }}>
-                      <div className="flex-1 px-3 py-2">
-                        <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
-                          <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
-                          <span className="text-gray-600">·</span>
-                          <span style={{ color: scfg?.color || "#9ca3af" }} className="font-bold">
-                            {scfg?.label || k.status}
-                          </span>
-                          <span className="text-gray-600">·</span>
-                          <span className="text-gray-500">{formatDate(k.created_at)}</span>
+        {/* History dropdown */}
+        {historyOpen && (() => {
+          // Build display entries: knocks table rows first; fall back to house itself
+          // if the house has been visited but predates the knocks table.
+          const entries = historyReady && history.length === 0 && house.status && house.status !== "unvisited"
+            ? [{
+                id: `fallback-${house.id}`,
+                status: house.status,
+                notes: house.notes || "",
+                created_at: house.updated_at || house.created_at,
+                profiles: null,
+                isFallback: true,
+              }]
+            : history;
+
+          return (
+            <div className="mb-4 rounded-xl overflow-hidden border border-gray-800" style={{ background: "#0d1117" }}>
+              <div className="px-3 py-2 border-b border-gray-800">
+                <div className="text-gray-400 text-xs font-bold tracking-widest uppercase">{house.number} {house.street}</div>
+              </div>
+              <div className="p-2 space-y-1.5">
+                {!historyReady ? (
+                  <div className="px-2 py-3 text-gray-500 text-xs font-mono animate-pulse">Loading…</div>
+                ) : entries.length === 0 ? (
+                  <div className="px-2 py-3 text-gray-600 text-xs">No previous visits recorded.</div>
+                ) : (
+                  entries.map(k => {
+                    const scfg = STATUS_CONFIG[k.status];
+                    return (
+                      <div key={k.id} className="rounded-lg overflow-hidden flex"
+                        style={{ background: "#111827", borderLeft: `3px solid ${scfg?.color || "#4a5568"}` }}>
+                        <div className="flex-1 px-3 py-2">
+                          <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
+                            <span className="text-white font-bold">{k.profiles?.name || "You"}</span>
+                            <span className="text-gray-600">·</span>
+                            <span style={{ color: scfg?.color || "#9ca3af" }} className="font-bold">
+                              {scfg?.label || k.status}
+                            </span>
+                            <span className="text-gray-600">·</span>
+                            <span className="text-gray-500">{formatDate(k.created_at)}</span>
+                          </div>
+                          {k.notes && <div className="text-gray-400 text-xs italic">{k.notes}</div>}
                         </div>
-                        {k.notes && <div className="text-gray-400 text-xs italic">{k.notes}</div>}
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 6 status buttons — 3 rows × 2 columns */}
         <div className="grid grid-cols-2 gap-3 mb-4">
