@@ -906,7 +906,7 @@ function HouseModal({ house, onUpdate, onClose }) {
 
   const logOutcome = () => {
     const finalNotes = status === "avoid"
-      ? avoidReasons.join(", ")
+      ? avoidReasons.join(", ") + (notes.trim() ? ` | ${notes.trim()}` : "")
       : notes;
     onUpdate(house.id, {
       status,
@@ -1025,6 +1025,14 @@ function HouseModal({ house, onUpdate, onClose }) {
                   </span>
                 </label>
               ))}
+            </div>
+            <div className="mt-3">
+              <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Additional Notes</label>
+              <textarea
+                className="w-full bg-gray-700 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-500 resize-none transition-colors"
+                rows={3} placeholder="Add notes (optional)..."
+                value={notes} onChange={e => setNotes(e.target.value)}
+              />
             </div>
           </div>
         )}
