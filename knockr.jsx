@@ -275,12 +275,12 @@ export default function KnockrApp() {
         house_id:     house.dbId,
         session_id:   session.id,
         rep_id:       user.id,
-        name:         "",
-        phone:        "",
-        email:        "",
-        service:      "",
-        grade:        "A",
-        note:         `Sale value: $${updates.leadInfo.saleValue || "—"}`,
+        name:         updates.leadInfo.name    || "",
+        phone:        updates.leadInfo.phone   || "",
+        email:        updates.leadInfo.email   || "",
+        service:      updates.leadInfo.service || "",
+        grade:        updates.leadInfo.grade   || "A",
+        note:         `${updates.leadInfo.note ? updates.leadInfo.note + " | " : ""}Sale value: $${updates.leadInfo.saleValue || "—"}`,
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
@@ -322,12 +322,12 @@ export default function KnockrApp() {
         house_id:     house.id,
         session_id:   session.id,
         rep_id:       user.id,
-        name:         "",
-        phone:        "",
-        email:        "",
-        service:      "",
-        grade:        "A",
-        note:         `Sale value: $${updates.leadInfo.saleValue || "—"}`,
+        name:         updates.leadInfo.name    || "",
+        phone:        updates.leadInfo.phone   || "",
+        email:        updates.leadInfo.email   || "",
+        service:      updates.leadInfo.service || "",
+        grade:        updates.leadInfo.grade   || "A",
+        note:         `${updates.leadInfo.note ? updates.leadInfo.note + " | " : ""}Sale value: $${updates.leadInfo.saleValue || "—"}`,
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
@@ -845,8 +845,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 // ══════════════════════════════════════════════════════════════════════════════
 const AVOID_REASONS = [
   "No solicitation sign",
-  "Aggressive dog",
-  "Rude/hostile occupant",
+  "Aggressive animal",
+  "Rude/hostile home owner",
   "Gated/no access",
   "Unsafe property",
   "Other",
@@ -894,7 +894,7 @@ function HouseModal({ house, onUpdate, onClose }) {
 
   function handleStatusClick(key) {
     setStatus(key);
-    setShowLeadForm(key === "lead");
+    setShowLeadForm(key === "lead" || key === "sale");
     if (key !== "avoid") setAvoidReasons([]);
   }
 
@@ -911,7 +911,7 @@ function HouseModal({ house, onUpdate, onClose }) {
     onUpdate(house.id, {
       status,
       notes: finalNotes,
-      leadInfo: status === "lead" ? leadInfo : status === "sale" ? { saleValue } : null,
+      leadInfo: status === "lead" ? leadInfo : status === "sale" ? { ...leadInfo, saleValue } : null,
     });
   };
 
@@ -1041,22 +1041,12 @@ function HouseModal({ house, onUpdate, onClose }) {
           </div>
         )}
 
-        {/* Sale value field */}
-        {status === "sale" && (
-          <div className="mb-4 bg-gray-800 rounded-xl p-4 border" style={{ borderColor: "#FFD70033" }}>
-            <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: "#FFD700" }}>Sale Details</div>
-            <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Estimated Sale Value ($)</label>
-            <input type="number" min="0"
-              className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
-              placeholder="e.g. 1500"
-              value={saleValue} onChange={e => setSaleValue(e.target.value)} />
-          </div>
-        )}
-
-        {/* Lead form */}
+        {/* Unified lead/sale form */}
         {showLeadForm && (
           <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-blue-900">
-            <div className="text-blue-300 text-xs font-bold tracking-widest uppercase mb-3">Lead Info</div>
+            <div className="text-blue-300 text-xs font-bold tracking-widest uppercase mb-3">
+              {status === "sale" ? "Sale Info" : "Lead Info"}
+            </div>
             {[{ label: "Name", key: "name", ph: "Full name" }, { label: "Phone", key: "phone", ph: "(416) 000-0000" }, { label: "Email", key: "email", ph: "email@example.com" }].map(f => (
               <div key={f.key} className="mb-3">
                 <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">{f.label}</label>
@@ -1098,11 +1088,22 @@ function HouseModal({ house, onUpdate, onClose }) {
                 ))}
               </div>
             </div>
-            <div>
+            <div className={status === "sale" ? "mb-3" : ""}>
               <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Lead Note</label>
               <textarea className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
                 rows={2} placeholder="Any details…" value={leadInfo.note} onChange={e => setLeadInfo({ ...leadInfo, note: e.target.value })} />
             </div>
+            {status === "sale" && (
+              <div>
+                <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider" style={{ color: "#FFD700" }}>
+                  Estimated Sale Value ($)
+                </label>
+                <input type="number" min="0"
+                  className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+                  placeholder="e.g. 1500"
+                  value={saleValue} onChange={e => setSaleValue(e.target.value)} />
+              </div>
+            )}
           </div>
         )}
 
