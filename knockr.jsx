@@ -15,20 +15,24 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Reverse geocode a lat/lng to { number, street } using Google Geocoding API
-async function reverseGeocode(lat, lng) {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${import.meta.env.VITE_GOOGLE_MAPS_KEY}`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (data.results?.[0]) {
-      const comps  = data.results[0].address_components;
-      const num    = comps.find(c => c.types.includes("street_number"))?.long_name || "";
-      const street = comps.find(c => c.types.includes("route"))?.long_name        || "Unknown St";
-      return { number: parseInt(num) || 0, street };
+// Reverse geocode using the Maps JS Geocoder (respects JS API key restrictions)
+function reverseGeocode(lat, lng) {
+  return new Promise(resolve => {
+    try {
+      new window.google.maps.Geocoder().geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === "OK" && results?.[0]) {
+          const comps  = results[0].address_components;
+          const num    = comps.find(c => c.types.includes("street_number"))?.long_name || "";
+          const street = comps.find(c => c.types.includes("route"))?.long_name        || "Unknown St";
+          resolve({ number: parseInt(num) || 0, street });
+        } else {
+          resolve({ number: 0, street: "Unknown St" });
+        }
+      });
+    } catch (_) {
+      resolve({ number: 0, street: "Unknown St" });
     }
-  } catch (_) {}
-  return { number: 0, street: "Unknown St" };
+  });
 }
 
 const STATUS_CONFIG = {
