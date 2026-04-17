@@ -447,6 +447,13 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     // Step 1: reverse geocode the tap to find the nearest real address
     const { number, street } = await reverseGeocode(tapLat, tapLng);
 
+    // Block unidentified addresses
+    if (!number || !street || street === "Unknown St") {
+      showToast("Could not identify this address. Tap closer to a house.");
+      setCreating(false);
+      return;
+    }
+
     // Duplicate check — same address already logged this session?
     const alreadyLogged = houses.some(
       h => h.number === number && h.street.toLowerCase() === street.toLowerCase()
@@ -664,7 +671,7 @@ function HouseModal({ house, onUpdate, onClose }) {
           ))}
         </div>
 
-        {status !== "unvisited" && (
+        {status !== "unvisited" && status !== "lead" && (
           <div className="mb-4">
             <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
             <textarea
