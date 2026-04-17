@@ -15,26 +15,29 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Reverse geocode a tap point → { number, street, neighbourhood }
+// Reverse geocode a tap point → { number, street, neighbourhood, lat, lng }
 function reverseGeocode(lat, lng) {
   return new Promise(resolve => {
     try {
       new window.google.maps.Geocoder().geocode({ location: { lat, lng } }, (results, status) => {
         if (status === "OK" && results?.[0]) {
           const comps  = results[0].address_components;
+          const loc    = results[0].geometry.location;
           const num    = comps.find(c => c.types.includes("street_number"))?.long_name || "";
           const street = comps.find(c => c.types.includes("route"))?.long_name        || "Unknown St";
           const neighbourhood =
             comps.find(c => c.types.includes("neighborhood") || c.types.includes("sublocality_level_1") || c.types.includes("sublocality"))?.long_name ||
             comps.find(c => c.types.includes("locality"))?.long_name ||
             "Toronto";
-          resolve({ number: parseInt(num) || 0, street, neighbourhood });
+          resolve({ number: parseInt(num) || 0, street, neighbourhood, lat: loc.lat(), lng: loc.lng() });
         } else {
-          resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto" });
+          console.error("[reverseGeocode] status:", status);
+          resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto", lat: null, lng: null });
         }
       });
-    } catch (_) {
-      resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto" });
+    } catch (err) {
+      console.error("[reverseGeocode] exception:", err);
+      resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto", lat: null, lng: null });
     }
   });
 }
@@ -49,10 +52,12 @@ function forwardGeocode(number, street) {
           const loc = results[0].geometry.location;
           resolve({ lat: loc.lat(), lng: loc.lng() });
         } else {
+          console.error("[forwardGeocode] status:", status, `for "${address}"`);
           resolve(null);
         }
       });
-    } catch (_) {
+    } catch (err) {
+      console.error("[forwardGeocode] exception:", err);
       resolve(null);
     }
   });
@@ -466,10 +471,12 @@ function LoginScreen({ onLogin, authError }) {
 // ══════════════════════════════════════════════════════════════════════════════
 function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, onReKnock, sessLoading }) {
   const [gpsPos,           setGpsPos]           = useState({ lat: 43.6894, lng: -79.3590 });
+  const [gpsAccuracy,      setGpsAccuracy]      = useState(null);
   const [toast,            setToast]            = useState(null);
   const [creating,         setCreating]         = useState(false);
-  const [pastHouses,   setPastHouses]   = useState([]);
-  const [selectedPast, setSelectedPast] = useState(null);
+  const [pastHouses,       setPastHouses]       = useState([]);
+  const [pastHousesLoaded, setPastHousesLoaded] = useState(false);
+  const [selectedPast,     setSelectedPast]     = useState(null);
   const mapRef   = useRef(null);
   const watchRef = useRef(null);
 
@@ -482,6 +489,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       pos => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setGpsPos(loc);
+        setGpsAccuracy(pos.coords.accuracy);
         mapRef.current?.panTo(loc);
       },
       () => {},
@@ -491,6 +499,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       pos => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setGpsPos(loc);
+        setGpsAccuracy(pos.coords.accuracy);
         mapRef.current?.panTo(loc);
       },
       () => {},
@@ -507,9 +516,13 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       const { data } = await q;
       // Ensure dbId is always set so HouseModal can query knocks correctly
       setPastHouses((data || []).map(h => ({ ...h, dbId: h.id })));
+      setPastHousesLoaded(true);
     }
     loadPastHouses();
   }, [session?.id]);
+
+  // Reset loaded flag when session changes so taps are blocked until new load completes
+  useEffect(() => { setPastHousesLoaded(false); }, [session?.id]);
 
   function handlePastHouseClick(house) {
     if (["lead", "sale"].includes(house.status)) return;
@@ -524,10 +537,15 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 
   async function handleMapClick(e) {
     if (!session || creating) return;
+    if (!pastHousesLoaded) { showToast("Loading nearby houses…"); return; }
     const tapLat = e.latLng.lat();
     const tapLng = e.latLng.lng();
 
     // Proximity check — rep must be within 50m of the tap
+    if (gpsAccuracy != null && gpsAccuracy > 30) {
+      showToast("GPS signal weak — move to open sky for better accuracy.");
+      return;
+    }
     if (haversineDistance(gpsPos.lat, gpsPos.lng, tapLat, tapLng) > 50) {
       showToast("You must be near this house to log it.");
       return;
@@ -536,7 +554,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     setCreating(true);
 
     // Step 1: reverse geocode the tap to find the nearest real address
-    const { number, street, neighbourhood } = await reverseGeocode(tapLat, tapLng);
+    const { number, street, neighbourhood, lat: rgLat, lng: rgLng } = await reverseGeocode(tapLat, tapLng);
 
     // Block unidentified addresses
     if (!number || !street || street === "Unknown St") {
@@ -577,8 +595,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 
     // Step 2: forward geocode to snap the marker to the exact house position
     const snapped = await forwardGeocode(number, street);
-    const finalLat = snapped?.lat ?? tapLat;
-    const finalLng = snapped?.lng ?? tapLng;
+    const finalLat = snapped?.lat ?? rgLat ?? tapLat;
+    const finalLng = snapped?.lng ?? rgLng ?? tapLng;
 
     const { data: saved, error } = await supabase.from("houses").insert({
       session_id: session.id,
