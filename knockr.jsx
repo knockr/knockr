@@ -59,11 +59,13 @@ function forwardGeocode(number, street) {
 }
 
 const STATUS_CONFIG = {
-  unvisited:      { color: "#4a5568", label: "Not Visited",    icon: "○" },
-  no_answer:      { color: "#f6ad55", label: "No Answer",      icon: "—" },
-  not_interested: { color: "#fc8181", label: "Not Interested", icon: "✕" },
-  answered:       { color: "#68d391", label: "Answered",       icon: "✓" },
-  lead:           { color: "#63b3ed", label: "Lead!",          icon: "★" },
+  unvisited:      { color: "#4a5568", label: "Not Visited",    icon: "○", textColor: "#fff" },
+  no_answer:      { color: "#f6ad55", label: "No Answer",      icon: "—", textColor: "#fff" },
+  not_interested: { color: "#fc8181", label: "Not Interested", icon: "✕", textColor: "#fff" },
+  answered:       { color: "#68d391", label: "Answered",       icon: "✓", textColor: "#fff" },
+  lead:           { color: "#63b3ed", label: "Lead!",          icon: "★", textColor: "#fff" },
+  avoid:          { color: "#ef4444", label: "Avoid",          icon: "⛔", textColor: "#fff", stripe: true },
+  sale:           { color: "#FFD700", label: "Sale",           icon: "💰", textColor: "#000" },
 };
 
 const GRADES = {
@@ -183,10 +185,12 @@ export default function KnockrApp() {
 
   const metrics = {
     knocked:       houses.filter(h => h.status !== "unvisited").length,
-    answered:      houses.filter(h => h.status === "answered" || h.status === "lead").length,
+    answered:      houses.filter(h => ["answered", "lead", "sale"].includes(h.status)).length,
     notInterested: houses.filter(h => h.status === "not_interested").length,
     noAnswer:      houses.filter(h => h.status === "no_answer").length,
     leads:         houses.filter(h => h.status === "lead").length,
+    sales:         houses.filter(h => h.status === "sale").length,
+    avoided:       houses.filter(h => h.status === "avoid").length,
   };
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -266,6 +270,21 @@ export default function KnockrApp() {
         address:      `${house.number} ${house.street}`,
       });
     }
+    if (updates.status === "sale" && updates.leadInfo) {
+      await supabase.from("leads").insert({
+        house_id:     house.dbId,
+        session_id:   session.id,
+        rep_id:       user.id,
+        name:         "",
+        phone:        "",
+        email:        "",
+        service:      "",
+        grade:        "A",
+        note:         `Sale value: $${updates.leadInfo.saleValue || "—"}`,
+        neighborhood: session.neighborhood,
+        address:      `${house.number} ${house.street}`,
+      });
+    }
   };
 
   const handleReKnock = async (house, updates) => {
@@ -294,6 +313,21 @@ export default function KnockrApp() {
         service:      updates.leadInfo.service || "",
         grade:        updates.leadInfo.grade   || "B",
         note:         updates.leadInfo.note    || "",
+        neighborhood: session.neighborhood,
+        address:      `${house.number} ${house.street}`,
+      });
+    }
+    if (updates.status === "sale" && updates.leadInfo) {
+      await supabase.from("leads").insert({
+        house_id:     house.id,
+        session_id:   session.id,
+        rep_id:       user.id,
+        name:         "",
+        phone:        "",
+        email:        "",
+        service:      "",
+        grade:        "A",
+        note:         `Sale value: $${updates.leadInfo.saleValue || "—"}`,
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
@@ -447,10 +481,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
   const [gpsPos,           setGpsPos]           = useState({ lat: 43.6894, lng: -79.3590 });
   const [toast,            setToast]            = useState(null);
   const [creating,         setCreating]         = useState(false);
-  const [pastHouses,       setPastHouses]       = useState([]);
-  const [selectedPast,     setSelectedPast]     = useState(null);
-  const [knockHistory,     setKnockHistory]     = useState([]);
-  const [historyLoading,   setHistoryLoading]   = useState(false);
+  const [pastHouses,   setPastHouses]   = useState([]);
+  const [selectedPast, setSelectedPast] = useState(null);
   const mapRef   = useRef(null);
   const watchRef = useRef(null);
 
@@ -491,19 +523,10 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     loadPastHouses();
   }, [session?.id]);
 
-  async function handlePastHouseClick(house) {
-    if (house.status === "lead") return;
+  function handlePastHouseClick(house) {
+    if (["lead", "sale"].includes(house.status)) return;
     if (!session) { showToast("Start a session to re-knock this house."); return; }
     setSelectedPast(house);
-    setHistoryLoading(true);
-    setKnockHistory([]);
-    const { data } = await supabase
-      .from("knocks")
-      .select("*, profiles(name, color)")
-      .eq("house_id", house.id)
-      .order("created_at", { ascending: false });
-    setKnockHistory(data || []);
-    setHistoryLoading(false);
   }
 
   function showToast(msg) {
@@ -550,8 +573,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     );
     if (pastMatch) {
       setCreating(false);
-      if (pastMatch.status === "lead") {
-        showToast("This house is a locked lead. It cannot be re-knocked.");
+      if (["lead", "sale"].includes(pastMatch.status)) {
+        showToast("This house is locked and cannot be re-knocked.");
       } else {
         handlePastHouseClick(pastMatch);
       }
@@ -627,11 +650,12 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                 <>
                   {/* Past houses — candy-cane stripes, clickable for re-knock */}
                   {dedupedPast.map(house => {
-                    const cfg    = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
-                    const isLead = house.status === "lead";
+                    const cfg      = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
+                    const isLocked = ["lead", "sale"].includes(house.status);
                     const isPastSelected = selectedPast?.id === house.id;
-                    const dark   = cfg.color + "55"; // darker stripe (transparent overlay of same hue)
-                    const stripe = `repeating-linear-gradient(45deg, ${cfg.color} 0px, ${cfg.color} 4px, ${dark} 4px, ${dark} 8px)`;
+                    // Stripe pattern for past markers — overlay same-hue at 40% over solid color
+                    const darkStripe = cfg.color + "44";
+                    const stripe = `repeating-linear-gradient(45deg, ${cfg.color} 0px, ${cfg.color} 4px, ${darkStripe} 4px, ${darkStripe} 8px)`;
                     return (
                       <OverlayView
                         key={`past-${house.id}`}
@@ -645,7 +669,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                             position: "relative",
                             zIndex: 8,
                             background: stripe,
-                            color: "#fff",
+                            color: cfg.textColor || "#fff",
                             borderRadius: 6,
                             minWidth: 36,
                             height: 28,
@@ -657,7 +681,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                             fontSize: 13,
                             fontWeight: 900,
                             fontFamily: "monospace",
-                            cursor: isLead ? "not-allowed" : "pointer",
+                            cursor: isLocked ? "not-allowed" : "pointer",
                             border: isPastSelected ? "2px solid #00e5ff" : "1.5px solid rgba(255,255,255,0.5)",
                             boxShadow: "0 2px 8px rgba(0,0,0,0.8)",
                             userSelect: "none",
@@ -666,7 +690,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                           }}
                         >
                           {house.number || "?"}
-                          {isLead && <span style={{ fontSize: 9, lineHeight: 1 }}>🔒</span>}
+                          {isLocked && <span style={{ fontSize: 9, lineHeight: 1 }}>🔒</span>}
                         </div>
                       </OverlayView>
                     );
@@ -674,8 +698,12 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 
                   {/* Current session houses — solid color, full opacity */}
                   {houses.map(house => {
-                    const cfg = STATUS_CONFIG[house.status];
+                    const cfg = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
                     const isSelected = selectedHouse?.id === house.id;
+                    const markerBg = house.status === "avoid"
+                      ? "repeating-linear-gradient(45deg,#ef4444 0,#ef4444 4px,#fff 4px,#fff 8px)"
+                      : cfg.color;
+                    const markerColor = cfg.textColor || "#fff";
                     return (
                       <OverlayView
                         key={house.id}
@@ -688,8 +716,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                             transform: "translate(-50%,-50%)",
                             position: "relative",
                             zIndex: 10,
-                            background: cfg.color,
-                            color: "#fff",
+                            background: markerBg,
+                            color: markerColor,
                             borderRadius: 6,
                             minWidth: 36,
                             height: 30,
@@ -707,6 +735,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
                               : "0 3px 8px rgba(0,0,0,0.8)",
                             userSelect: "none",
                             whiteSpace: "nowrap",
+                            textShadow: house.status === "avoid" ? "0 1px 3px rgba(0,0,0,0.6)" : undefined,
                           }}
                         >
                           {house.number || "?"}
@@ -763,8 +792,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       </div>
 
       {session && (
-        <div className="grid grid-cols-4 bg-gray-900 border-t border-gray-800 text-center text-xs py-2">
-          {[["Knocked", metrics.knocked, "text-white"], ["Answered", metrics.answered, "text-green-400"], ["Leads", metrics.leads, "text-blue-400"], ["No Ans.", metrics.noAnswer, "text-amber-400"]].map(([l, v, c]) => (
+        <div className="grid grid-cols-5 bg-gray-900 border-t border-gray-800 text-center text-xs py-2">
+          {[["Knocked", metrics.knocked, "text-white"], ["Answered", metrics.answered, "text-green-400"], ["Leads", metrics.leads, "text-blue-400"], ["Sales", metrics.sales, "text-yellow-400"], ["No Ans.", metrics.noAnswer, "text-amber-400"]].map(([l, v, c]) => (
             <div key={l}><div className={`font-bold text-lg ${c}`}>{v}</div><div className="text-gray-500">{l}</div></div>
           ))}
         </div>
@@ -798,15 +827,12 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       {selectedPast && (
         <HouseModal
           house={selectedPast}
-          knockHistory={knockHistory}
-          historyLoading={historyLoading}
           onUpdate={async (id, updates) => {
             await onReKnock(selectedPast, updates);
             setPastHouses(prev => prev.map(h => h.id === id ? { ...h, status: updates.status } : h));
             setSelectedPast(null);
-            setKnockHistory([]);
           }}
-          onClose={() => { setSelectedPast(null); setKnockHistory([]); }}
+          onClose={() => setSelectedPast(null)}
         />
       )}
     </div>
@@ -816,81 +842,145 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 // ══════════════════════════════════════════════════════════════════════════════
 // HOUSE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function HouseModal({ house, onUpdate, onClose, knockHistory = [], historyLoading = false }) {
-  const [status,   setStatus]   = useState(house.status === "unvisited" ? "" : house.status);
-  const [notes,    setNotes]    = useState("");
+function HouseModal({ house, onUpdate, onClose }) {
+  const [status,       setStatus]       = useState(house.status === "unvisited" ? "" : house.status);
+  const [notes,        setNotes]        = useState("");
   const [showLeadForm, setShowLeadForm] = useState(false);
-  const [leadInfo, setLeadInfo] = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
+  const [leadInfo,     setLeadInfo]     = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
+  const [saleValue,    setSaleValue]    = useState("");
+  const [historyOpen,  setHistoryOpen]  = useState(false);
+  const [history,      setHistory]      = useState([]);
+  const [historyReady, setHistoryReady] = useState(false);
+
+  // Fetch knock history for this house on mount
+  useEffect(() => {
+    supabase.from("knocks")
+      .select("*, profiles(name, color)")
+      .eq("house_id", house.id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => { setHistory(data || []); setHistoryReady(true); });
+  }, [house.id]);
 
   const statusButtons = [
-    { key: "no_answer",      label: "No Answer",      bg: "#78350f", text: "#f6ad55" },
-    { key: "not_interested", label: "Not Interested", bg: "#7f1d1d", text: "#fc8181" },
-    { key: "answered",       label: "Answered",       bg: "#14532d", text: "#68d391" },
-    { key: "lead",           label: "Got a Lead! ★",  bg: "#1e3a5f", text: "#63b3ed" },
+    { key: "no_answer",      label: "No Answer",      bg: "#78350f",  text: "#f6ad55" },
+    { key: "not_interested", label: "Not Interested", bg: "#7f1d1d",  text: "#fc8181" },
+    { key: "answered",       label: "Answered",       bg: "#14532d",  text: "#68d391" },
+    { key: "lead",           label: "Got a Lead! ★",  bg: "#1e3a5f",  text: "#63b3ed" },
+    { key: "avoid",          label: "⛔ Avoid",
+      bg: "repeating-linear-gradient(45deg,#ef4444 0,#ef4444 4px,#fff 4px,#fff 8px)",
+      text: "#dc2626", border: "#dc2626" },
+    { key: "sale",           label: "Sale! 💰",        bg: "#1c1400",  text: "#FFD700" },
   ];
 
-  const hasHistory = knockHistory.length > 0 || historyLoading;
+  function handleStatusClick(key) {
+    setStatus(key);
+    setShowLeadForm(key === "lead");
+  }
+
+  const logOutcome = () => onUpdate(house.id, {
+    status,
+    notes,
+    leadInfo: status === "lead" ? leadInfo : status === "sale" ? { saleValue } : null,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
       <div className="bg-gray-900 rounded-t-3xl p-6 max-h-screen overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <div className="text-white font-bold text-lg">{house.number} {house.street}</div>
-            <div className="text-gray-500 text-xs">{hasHistory ? "Previous knocks on record" : "Select an outcome"}</div>
+
+        {/* Header */}
+        <div className="flex items-start justify-between mb-5">
+          <div className="flex-1 min-w-0 pr-2">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-white font-bold text-lg">{house.number} {house.street}</span>
+              {/* History button */}
+              {historyReady && history.length === 0 ? (
+                <span
+                  title="No previous visits"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border border-gray-700 text-gray-600 cursor-not-allowed select-none"
+                >
+                  🕐 History
+                </span>
+              ) : (
+                <button
+                  onClick={() => setHistoryOpen(o => !o)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border transition-all"
+                  style={historyOpen
+                    ? { background: "#0d2a1a", color: "#34d399", borderColor: "#34d399" }
+                    : { color: "#6b7280", borderColor: "#374151" }}
+                >
+                  🕐 {historyReady ? `History (${history.length})` : "…"}
+                </button>
+              )}
+            </div>
+            <div className="text-gray-500 text-xs">Select an outcome</div>
           </div>
-          <button onClick={onClose} className="text-gray-500 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
         </div>
 
-        {/* Knock history section */}
-        {hasHistory && (
+        {/* Expandable history section */}
+        {historyOpen && historyReady && (
           <div className="mb-4 bg-gray-800 rounded-xl p-3 border border-gray-700">
             <div className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Knock History</div>
-            {historyLoading
-              ? <div className="text-gray-500 text-xs animate-pulse">Loading history…</div>
-              : knockHistory.map((k, i) => (
-                <div key={k.id} className={`${i > 0 ? "mt-2 pt-2 border-t border-gray-700" : ""}`}>
-                  <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
-                    <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
-                    <span className="text-gray-500">·</span>
-                    <span style={{ color: STATUS_CONFIG[k.status]?.color || "#9ca3af" }} className="font-bold">
-                      {STATUS_CONFIG[k.status]?.label || k.status}
-                    </span>
-                    <span className="text-gray-500">·</span>
-                    <span className="text-gray-500">{formatDate(k.created_at)}</span>
-                  </div>
-                  {k.notes && (
-                    <div className="text-gray-400 text-xs italic mt-0.5">Notes: {k.notes}</div>
-                  )}
+            {history.map((k, i) => (
+              <div key={k.id} className={`${i > 0 ? "mt-2 pt-2 border-t border-gray-700" : ""}`}>
+                <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
+                  <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
+                  <span className="text-gray-600">·</span>
+                  <span style={{ color: STATUS_CONFIG[k.status]?.color || "#9ca3af" }} className="font-bold">
+                    {STATUS_CONFIG[k.status]?.label || k.status}
+                  </span>
+                  <span className="text-gray-600">·</span>
+                  <span className="text-gray-500">{formatDate(k.created_at)}</span>
                 </div>
-              ))
-            }
+                {k.notes && <div className="text-gray-400 text-xs italic mt-0.5">Notes: {k.notes}</div>}
+              </div>
+            ))}
           </div>
         )}
 
+        {/* 6 status buttons — 3 rows × 2 columns */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           {statusButtons.map(btn => (
-            <button key={btn.key} onClick={() => { setStatus(btn.key); setShowLeadForm(btn.key === "lead"); }}
+            <button key={btn.key}
+              onClick={() => handleStatusClick(btn.key)}
               className="py-3 rounded-xl text-sm font-bold transition-all border-2"
-              style={{ background: btn.bg, color: btn.text, borderColor: status === btn.key ? btn.text : "transparent" }}>
+              style={{
+                background: btn.bg,
+                color: btn.text,
+                borderColor: status === btn.key ? (btn.border || btn.text) : "transparent",
+              }}>
               {btn.label}
             </button>
           ))}
         </div>
 
-        {status && status !== "unvisited" && status !== "lead" && (
+        {/* Notes — shown for outcomes except lead, sale, unvisited */}
+        {status && !["unvisited", "lead", "sale"].includes(status) && (
           <div className="mb-4">
             <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
             <textarea
               className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-500 resize-none transition-colors"
-              rows={3}
-              placeholder="Add notes (optional)..."
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+              rows={3} placeholder="Add notes (optional)..."
+              value={notes} onChange={e => setNotes(e.target.value)}
             />
           </div>
         )}
 
+        {/* Sale value field */}
+        {status === "sale" && (
+          <div className="mb-4 bg-gray-800 rounded-xl p-4 border" style={{ borderColor: "#FFD70033" }}>
+            <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: "#FFD700" }}>Sale Details</div>
+            <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Estimated Sale Value ($)</label>
+            <input
+              type="number" min="0"
+              className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+              placeholder="e.g. 1500"
+              value={saleValue} onChange={e => setSaleValue(e.target.value)}
+            />
+          </div>
+        )}
+
+        {/* Lead form */}
         {showLeadForm && (
           <div className="bg-gray-800 rounded-xl p-4 mb-4 border border-blue-900">
             <div className="text-blue-300 text-xs font-bold tracking-widest uppercase mb-3">Lead Info</div>
@@ -943,7 +1033,7 @@ function HouseModal({ house, onUpdate, onClose, knockHistory = [], historyLoadin
           </div>
         )}
 
-        <button onClick={() => onUpdate(house.id, { status, notes, leadInfo: status === "lead" ? leadInfo : null })}
+        <button onClick={logOutcome}
           disabled={!status || status === "unvisited"}
           className="w-full py-3 rounded-xl font-black text-sm tracking-widest uppercase transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
           style={{ background: "linear-gradient(135deg,#00e5ff,#0070ff)", color: "#000" }}>
@@ -1217,13 +1307,15 @@ function SummaryScreen({ metrics, elapsed, user, onDone, onLogout }) {
   const answerRate = metrics.knocked  > 0 ? Math.round((metrics.answered / metrics.knocked)  * 100) : 0;
   const leadRate   = metrics.answered > 0 ? Math.round((metrics.leads    / metrics.answered) * 100) : 0;
   const rows = [
-    ["Doors Knocked",   metrics.knocked,       "text-white"],
-    ["Doors Answered",  metrics.answered,      "text-green-400"],
-    ["Not Interested",  metrics.notInterested, "text-red-400"],
-    ["No Answer",       metrics.noAnswer,      "text-amber-400"],
-    ["Leads Captured",  metrics.leads,         "text-blue-400"],
-    ["Answer Rate",     `${answerRate}%`,       "text-green-300"],
-    ["Lead Conversion", `${leadRate}%`,         "text-blue-300"],
+    ["Doors Knocked",   metrics.knocked,        "text-white"],
+    ["Doors Answered",  metrics.answered,       "text-green-400"],
+    ["Not Interested",  metrics.notInterested,  "text-red-400"],
+    ["No Answer",       metrics.noAnswer,       "text-amber-400"],
+    ["Avoided",         metrics.avoided || 0,   "text-gray-400"],
+    ["Leads Captured",  metrics.leads,          "text-blue-400"],
+    ["Sales Closed",    metrics.sales || 0,     "text-yellow-400"],
+    ["Answer Rate",     `${answerRate}%`,        "text-green-300"],
+    ["Lead Conversion", `${leadRate}%`,          "text-blue-300"],
     ["Duration",        formatDuration(elapsed), "text-cyan-300"],
   ];
   return (
