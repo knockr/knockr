@@ -239,6 +239,14 @@ export default function KnockrApp() {
     setSelectedHouse(null);
     if (!house?.dbId) return;
 
+    await supabase.from("knocks").insert({
+      house_id:   house.dbId,
+      rep_id:     user.id,
+      session_id: session.id,
+      status:     updates.status,
+      notes:      updates.notes || "",
+    });
+
     await supabase.from("houses")
       .update({ status: updates.status, notes: updates.notes || "", updated_at: new Date().toISOString() })
       .eq("id", house.dbId);
@@ -246,6 +254,38 @@ export default function KnockrApp() {
     if (updates.status === "lead" && updates.leadInfo) {
       await supabase.from("leads").insert({
         house_id:     house.dbId,
+        session_id:   session.id,
+        rep_id:       user.id,
+        name:         updates.leadInfo.name    || "",
+        phone:        updates.leadInfo.phone   || "",
+        email:        updates.leadInfo.email   || "",
+        service:      updates.leadInfo.service || "",
+        grade:        updates.leadInfo.grade   || "B",
+        note:         updates.leadInfo.note    || "",
+        neighborhood: session.neighborhood,
+        address:      `${house.number} ${house.street}`,
+      });
+    }
+  };
+
+  const handleReKnock = async (house, updates) => {
+    if (!session) return;
+
+    await supabase.from("knocks").insert({
+      house_id:   house.id,
+      rep_id:     user.id,
+      session_id: session.id,
+      status:     updates.status,
+      notes:      updates.notes || "",
+    });
+
+    await supabase.from("houses")
+      .update({ status: updates.status, notes: updates.notes || "", updated_at: new Date().toISOString() })
+      .eq("id", house.id);
+
+    if (updates.status === "lead" && updates.leadInfo) {
+      await supabase.from("leads").insert({
+        house_id:     house.id,
         session_id:   session.id,
         rep_id:       user.id,
         name:         updates.leadInfo.name    || "",
@@ -314,7 +354,8 @@ export default function KnockrApp() {
           onEndSession={handleEndSession}
           onUpdateHouse={handleUpdateHouse}
           onAddHouse={handleAddHouse}
-          onUpdateSession={handleUpdateSession} />
+          onUpdateSession={handleUpdateSession}
+          onReKnock={handleReKnock} />
       )}
       {repTab === "stats" && <StatsTab user={user} />}
     </div>
@@ -402,10 +443,14 @@ function LoginScreen({ onLogin }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, sessLoading }) {
-  const [gpsPos,   setGpsPos]   = useState({ lat: 43.6894, lng: -79.3590 });
-  const [toast,    setToast]    = useState(null);
-  const [creating, setCreating] = useState(false);
+function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, onReKnock, sessLoading }) {
+  const [gpsPos,           setGpsPos]           = useState({ lat: 43.6894, lng: -79.3590 });
+  const [toast,            setToast]            = useState(null);
+  const [creating,         setCreating]         = useState(false);
+  const [pastHouses,       setPastHouses]       = useState([]);
+  const [selectedPast,     setSelectedPast]     = useState(null);
+  const [knockHistory,     setKnockHistory]     = useState([]);
+  const [historyLoading,   setHistoryLoading]   = useState(false);
   const mapRef   = useRef(null);
   const watchRef = useRef(null);
 
@@ -435,6 +480,32 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
   }, []);
 
+  // Load all houses from previous sessions (communal map)
+  useEffect(() => {
+    async function loadPastHouses() {
+      let q = supabase.from("houses").select("*").not("lat", "is", null).not("status", "eq", "unvisited");
+      if (session?.id) q = q.neq("session_id", session.id);
+      const { data } = await q;
+      setPastHouses(data || []);
+    }
+    loadPastHouses();
+  }, [session?.id]);
+
+  async function handlePastHouseClick(house) {
+    if (house.status === "lead") return;
+    if (!session) { showToast("Start a session to re-knock this house."); return; }
+    setSelectedPast(house);
+    setHistoryLoading(true);
+    setKnockHistory([]);
+    const { data } = await supabase
+      .from("knocks")
+      .select("*, profiles(name, color)")
+      .eq("house_id", house.id)
+      .order("created_at", { ascending: false });
+    setKnockHistory(data || []);
+    setHistoryLoading(false);
+  }
+
   function showToast(msg) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
@@ -463,13 +534,27 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       return;
     }
 
-    // Duplicate check — same address already logged this session?
+    // Duplicate check — current session
     const alreadyLogged = houses.some(
       h => h.number === number && h.street.toLowerCase() === street.toLowerCase()
     );
     if (alreadyLogged) {
       showToast("This house is already logged.");
       setCreating(false);
+      return;
+    }
+
+    // Past house check — open re-knock modal instead of creating
+    const pastMatch = pastHouses.find(
+      h => h.number === number && h.street.toLowerCase() === street.toLowerCase()
+    );
+    if (pastMatch) {
+      setCreating(false);
+      if (pastMatch.status === "lead") {
+        showToast("This house is a locked lead. It cannot be re-knocked.");
+      } else {
+        handlePastHouseClick(pastMatch);
+      }
       return;
     }
 
@@ -527,6 +612,52 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
             onLoad={map => { mapRef.current = map; }}
             onClick={handleMapClick}
           >
+            {/* Past session houses — 50% opacity, clickable for re-knock */}
+            {pastHouses.map(house => {
+              const cfg    = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
+              const isLead = house.status === "lead";
+              const isPastSelected = selectedPast?.id === house.id;
+              return (
+                <OverlayView
+                  key={`past-${house.id}`}
+                  position={{ lat: house.lat, lng: house.lng }}
+                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                >
+                  <div
+                    onClick={e => { e.stopPropagation(); handlePastHouseClick(house); }}
+                    style={{
+                      transform: "translate(-50%,-50%)",
+                      position: "relative",
+                      zIndex: 8,
+                      background: cfg.color,
+                      opacity: 0.55,
+                      color: "#fff",
+                      borderRadius: 6,
+                      minWidth: 36,
+                      height: 28,
+                      padding: "0 6px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      fontSize: 12,
+                      fontWeight: 900,
+                      fontFamily: "monospace",
+                      cursor: isLead ? "not-allowed" : "pointer",
+                      border: isPastSelected ? "2px solid #00e5ff" : "1.5px solid rgba(255,255,255,0.35)",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.7)",
+                      userSelect: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ textDecoration: isLead ? "none" : "line-through" }}>{house.number || "?"}</span>
+                    {isLead && <span style={{ fontSize: 9 }}>🔒</span>}
+                  </div>
+                </OverlayView>
+              );
+            })}
+
+            {/* Current session houses — full opacity */}
             {houses.map(house => {
               const cfg = STATUS_CONFIG[house.status];
               const isSelected = selectedHouse?.id === house.id;
@@ -645,6 +776,21 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       </div>
 
       {selectedHouse && <HouseModal house={selectedHouse} onUpdate={onUpdateHouse} onClose={() => onSelectHouse(null)} />}
+
+      {selectedPast && (
+        <HouseModal
+          house={selectedPast}
+          knockHistory={knockHistory}
+          historyLoading={historyLoading}
+          onUpdate={async (id, updates) => {
+            await onReKnock(selectedPast, updates);
+            setPastHouses(prev => prev.map(h => h.id === id ? { ...h, status: updates.status } : h));
+            setSelectedPast(null);
+            setKnockHistory([]);
+          }}
+          onClose={() => { setSelectedPast(null); setKnockHistory([]); }}
+        />
+      )}
     </div>
   );
 }
@@ -652,8 +798,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 // ══════════════════════════════════════════════════════════════════════════════
 // HOUSE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function HouseModal({ house, onUpdate, onClose }) {
-  const [status,   setStatus]   = useState(house.status);
+function HouseModal({ house, onUpdate, onClose, knockHistory = [], historyLoading = false }) {
+  const [status,   setStatus]   = useState(house.status === "unvisited" ? "" : house.status);
   const [notes,    setNotes]    = useState("");
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [leadInfo, setLeadInfo] = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
@@ -665,16 +811,44 @@ function HouseModal({ house, onUpdate, onClose }) {
     { key: "lead",           label: "Got a Lead! ★",  bg: "#1e3a5f", text: "#63b3ed" },
   ];
 
+  const hasHistory = knockHistory.length > 0 || historyLoading;
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
       <div className="bg-gray-900 rounded-t-3xl p-6 max-h-screen overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <div>
             <div className="text-white font-bold text-lg">{house.number} {house.street}</div>
-            <div className="text-gray-500 text-xs">Select an outcome</div>
+            <div className="text-gray-500 text-xs">{hasHistory ? "Previous knocks on record" : "Select an outcome"}</div>
           </div>
           <button onClick={onClose} className="text-gray-500 text-2xl leading-none">×</button>
         </div>
+
+        {/* Knock history section */}
+        {hasHistory && (
+          <div className="mb-4 bg-gray-800 rounded-xl p-3 border border-gray-700">
+            <div className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Knock History</div>
+            {historyLoading
+              ? <div className="text-gray-500 text-xs animate-pulse">Loading history…</div>
+              : knockHistory.map((k, i) => (
+                <div key={k.id} className={`${i > 0 ? "mt-2 pt-2 border-t border-gray-700" : ""}`}>
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
+                    <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
+                    <span className="text-gray-500">·</span>
+                    <span style={{ color: STATUS_CONFIG[k.status]?.color || "#9ca3af" }} className="font-bold">
+                      {STATUS_CONFIG[k.status]?.label || k.status}
+                    </span>
+                    <span className="text-gray-500">·</span>
+                    <span className="text-gray-500">{formatDate(k.created_at)}</span>
+                  </div>
+                  {k.notes && (
+                    <div className="text-gray-400 text-xs italic mt-0.5">Notes: {k.notes}</div>
+                  )}
+                </div>
+              ))
+            }
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 mb-4">
           {statusButtons.map(btn => (
@@ -686,7 +860,7 @@ function HouseModal({ house, onUpdate, onClose }) {
           ))}
         </div>
 
-        {status !== "unvisited" && status !== "lead" && (
+        {status && status !== "unvisited" && status !== "lead" && (
           <div className="mb-4">
             <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
             <textarea
@@ -752,7 +926,7 @@ function HouseModal({ house, onUpdate, onClose }) {
         )}
 
         <button onClick={() => onUpdate(house.id, { status, notes, leadInfo: status === "lead" ? leadInfo : null })}
-          disabled={status === "unvisited"}
+          disabled={!status || status === "unvisited"}
           className="w-full py-3 rounded-xl font-black text-sm tracking-widest uppercase transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
           style={{ background: "linear-gradient(135deg,#00e5ff,#0070ff)", color: "#000" }}>
           LOG OUTCOME
