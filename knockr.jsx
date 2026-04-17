@@ -612,93 +612,111 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
             onLoad={map => { mapRef.current = map; }}
             onClick={handleMapClick}
           >
-            {/* Past session houses — 50% opacity, clickable for re-knock */}
-            {pastHouses.map(house => {
-              const cfg    = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
-              const isLead = house.status === "lead";
-              const isPastSelected = selectedPast?.id === house.id;
-              return (
-                <OverlayView
-                  key={`past-${house.id}`}
-                  position={{ lat: house.lat, lng: house.lng }}
-                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                >
-                  <div
-                    onClick={e => { e.stopPropagation(); handlePastHouseClick(house); }}
-                    style={{
-                      transform: "translate(-50%,-50%)",
-                      position: "relative",
-                      zIndex: 8,
-                      background: cfg.color,
-                      opacity: 0.55,
-                      color: "#fff",
-                      borderRadius: 6,
-                      minWidth: 36,
-                      height: 28,
-                      padding: "0 6px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 2,
-                      fontSize: 12,
-                      fontWeight: 900,
-                      fontFamily: "monospace",
-                      cursor: isLead ? "not-allowed" : "pointer",
-                      border: isPastSelected ? "2px solid #00e5ff" : "1.5px solid rgba(255,255,255,0.35)",
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.7)",
-                      userSelect: "none",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <span style={{ textDecoration: isLead ? "none" : "line-through" }}>{house.number || "?"}</span>
-                    {isLead && <span style={{ fontSize: 9 }}>🔒</span>}
-                  </div>
-                </OverlayView>
+            {(() => {
+              // Build a set of addresses already covered by current session
+              const currentAddrs = new Set(
+                houses.map(h => `${h.number}|${h.street.toLowerCase()}`)
               );
-            })}
 
-            {/* Current session houses — full opacity */}
-            {houses.map(house => {
-              const cfg = STATUS_CONFIG[house.status];
-              const isSelected = selectedHouse?.id === house.id;
-              return (
-                <OverlayView
-                  key={house.id}
-                  position={{ lat: house.lat, lng: house.lng }}
-                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
-                >
-                  <div
-                    onClick={e => { e.stopPropagation(); onSelectHouse(house); }}
-                    style={{
-                      transform: "translate(-50%,-50%)",
-                      position: "relative",
-                      zIndex: 10,
-                      background: cfg.color,
-                      color: "#fff",
-                      borderRadius: 6,
-                      minWidth: 36,
-                      height: 30,
-                      padding: "0 7px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 14,
-                      fontWeight: 900,
-                      fontFamily: "monospace",
-                      cursor: "pointer",
-                      border: isSelected ? "3px solid #00e5ff" : "2px solid #fff",
-                      boxShadow: isSelected
-                        ? `0 0 0 2px ${cfg.color}, 0 3px 10px rgba(0,0,0,0.9)`
-                        : "0 3px 8px rgba(0,0,0,0.8)",
-                      userSelect: "none",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {house.number || "?"}
-                  </div>
-                </OverlayView>
+              // Deduplicated past houses — skip any whose address is in current session
+              const dedupedPast = pastHouses.filter(
+                h => !currentAddrs.has(`${h.number}|${h.street.toLowerCase()}`)
               );
-            })}
+
+              return (
+                <>
+                  {/* Past houses — candy-cane stripes, clickable for re-knock */}
+                  {dedupedPast.map(house => {
+                    const cfg    = STATUS_CONFIG[house.status] || STATUS_CONFIG.unvisited;
+                    const isLead = house.status === "lead";
+                    const isPastSelected = selectedPast?.id === house.id;
+                    const dark   = cfg.color + "55"; // darker stripe (transparent overlay of same hue)
+                    const stripe = `repeating-linear-gradient(45deg, ${cfg.color} 0px, ${cfg.color} 4px, ${dark} 4px, ${dark} 8px)`;
+                    return (
+                      <OverlayView
+                        key={`past-${house.id}`}
+                        position={{ lat: house.lat, lng: house.lng }}
+                        mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                      >
+                        <div
+                          onClick={e => { e.stopPropagation(); handlePastHouseClick(house); }}
+                          style={{
+                            transform: "translate(-50%,-50%)",
+                            position: "relative",
+                            zIndex: 8,
+                            background: stripe,
+                            color: "#fff",
+                            borderRadius: 6,
+                            minWidth: 36,
+                            height: 28,
+                            padding: "0 6px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 3,
+                            fontSize: 13,
+                            fontWeight: 900,
+                            fontFamily: "monospace",
+                            cursor: isLead ? "not-allowed" : "pointer",
+                            border: isPastSelected ? "2px solid #00e5ff" : "1.5px solid rgba(255,255,255,0.5)",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.8)",
+                            userSelect: "none",
+                            whiteSpace: "nowrap",
+                            textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+                          }}
+                        >
+                          {house.number || "?"}
+                          {isLead && <span style={{ fontSize: 9, lineHeight: 1 }}>🔒</span>}
+                        </div>
+                      </OverlayView>
+                    );
+                  })}
+
+                  {/* Current session houses — solid color, full opacity */}
+                  {houses.map(house => {
+                    const cfg = STATUS_CONFIG[house.status];
+                    const isSelected = selectedHouse?.id === house.id;
+                    return (
+                      <OverlayView
+                        key={house.id}
+                        position={{ lat: house.lat, lng: house.lng }}
+                        mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                      >
+                        <div
+                          onClick={e => { e.stopPropagation(); onSelectHouse(house); }}
+                          style={{
+                            transform: "translate(-50%,-50%)",
+                            position: "relative",
+                            zIndex: 10,
+                            background: cfg.color,
+                            color: "#fff",
+                            borderRadius: 6,
+                            minWidth: 36,
+                            height: 30,
+                            padding: "0 7px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 14,
+                            fontWeight: 900,
+                            fontFamily: "monospace",
+                            cursor: "pointer",
+                            border: isSelected ? "3px solid #00e5ff" : "2px solid #fff",
+                            boxShadow: isSelected
+                              ? `0 0 0 2px ${cfg.color}, 0 3px 10px rgba(0,0,0,0.9)`
+                              : "0 3px 8px rgba(0,0,0,0.8)",
+                            userSelect: "none",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {house.number || "?"}
+                        </div>
+                      </OverlayView>
+                    );
+                  })}
+                </>
+              );
+            })()}
             <OverlayView position={gpsPos} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
               <div style={{ transform: "translate(-50%,-50%)", position: "relative", width: 18, height: 18, pointerEvents: "none", zIndex: 20 }}>
                 <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#00e5ff", border: "2.5px solid white", boxShadow: "0 0 16px #00e5ff" }} />
