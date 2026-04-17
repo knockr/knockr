@@ -15,7 +15,7 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Reverse geocode a tap point → { number, street }
+// Reverse geocode a tap point → { number, street, neighbourhood }
 function reverseGeocode(lat, lng) {
   return new Promise(resolve => {
     try {
@@ -24,13 +24,17 @@ function reverseGeocode(lat, lng) {
           const comps  = results[0].address_components;
           const num    = comps.find(c => c.types.includes("street_number"))?.long_name || "";
           const street = comps.find(c => c.types.includes("route"))?.long_name        || "Unknown St";
-          resolve({ number: parseInt(num) || 0, street });
+          const neighbourhood =
+            comps.find(c => c.types.includes("neighborhood") || c.types.includes("sublocality_level_1") || c.types.includes("sublocality"))?.long_name ||
+            comps.find(c => c.types.includes("locality"))?.long_name ||
+            "Toronto";
+          resolve({ number: parseInt(num) || 0, street, neighbourhood });
         } else {
-          resolve({ number: 0, street: "Unknown St" });
+          resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto" });
         }
       });
     } catch (_) {
-      resolve({ number: 0, street: "Unknown St" });
+      resolve({ number: 0, street: "Unknown St", neighbourhood: "Toronto" });
     }
   });
 }
@@ -212,6 +216,10 @@ export default function KnockrApp() {
     setHouses(prev => [...prev, house]);
   };
 
+  const handleUpdateSession = (updates) => {
+    setSession(prev => ({ ...prev, ...updates }));
+  };
+
   const handleEndSession = async () => {
     if (session?.id) {
       await supabase.from("sessions").update({
@@ -305,7 +313,8 @@ export default function KnockrApp() {
           onStartSession={handleStartSession}
           onEndSession={handleEndSession}
           onUpdateHouse={handleUpdateHouse}
-          onAddHouse={handleAddHouse} />
+          onAddHouse={handleAddHouse}
+          onUpdateSession={handleUpdateSession} />
       )}
       {repTab === "stats" && <StatsTab user={user} />}
     </div>
@@ -393,7 +402,7 @@ function LoginScreen({ onLogin }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, sessLoading }) {
+function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, sessLoading }) {
   const [gpsPos,   setGpsPos]   = useState({ lat: 43.6894, lng: -79.3590 });
   const [toast,    setToast]    = useState(null);
   const [creating, setCreating] = useState(false);
@@ -445,7 +454,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     setCreating(true);
 
     // Step 1: reverse geocode the tap to find the nearest real address
-    const { number, street } = await reverseGeocode(tapLat, tapLng);
+    const { number, street, neighbourhood } = await reverseGeocode(tapLat, tapLng);
 
     // Block unidentified addresses
     if (!number || !street || street === "Unknown St") {
@@ -462,6 +471,12 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       showToast("This house is already logged.");
       setCreating(false);
       return;
+    }
+
+    // Auto-detect neighbourhood from geocode and update session once
+    if (neighbourhood && session.neighborhood === "Current Location") {
+      await supabase.from("sessions").update({ neighborhood: neighbourhood }).eq("id", session.id);
+      onUpdateSession?.({ neighborhood: neighbourhood });
     }
 
     // Step 2: forward geocode to snap the marker to the exact house position
@@ -950,6 +965,7 @@ function StatsTab({ user }) {
                           </div>
                           <div className="text-gray-400 text-xs">{lead.address}</div>
                           <div className="text-gray-500 text-xs">{lead.phone} · {lead.neighborhood}</div>
+                          {lead.note && <div className="text-gray-500 text-xs italic mt-0.5">{lead.note}</div>}
                         </div>
                         <div className="text-gray-600 text-xs flex-shrink-0 pt-0.5">{formatDate(lead.created_at)}</div>
                       </div>
