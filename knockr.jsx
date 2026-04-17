@@ -842,17 +842,28 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 // ══════════════════════════════════════════════════════════════════════════════
 // HOUSE MODAL
 // ══════════════════════════════════════════════════════════════════════════════
-function HouseModal({ house, onUpdate, onClose }) {
-  const [status,       setStatus]       = useState(house.status === "unvisited" ? "" : house.status);
-  const [notes,        setNotes]        = useState("");
-  const [showLeadForm, setShowLeadForm] = useState(false);
-  const [leadInfo,     setLeadInfo]     = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
-  const [saleValue,    setSaleValue]    = useState("");
-  const [historyOpen,  setHistoryOpen]  = useState(false);
-  const [history,      setHistory]      = useState([]);
-  const [historyReady, setHistoryReady] = useState(false);
+const AVOID_REASONS = [
+  "No solicitation sign",
+  "Aggressive dog",
+  "Rude/hostile occupant",
+  "Gated/no access",
+  "Unsafe property",
+  "Other",
+];
 
-  // Fetch knock history for this house on mount
+function HouseModal({ house, onUpdate, onClose }) {
+  // Status always starts empty — rep picks a fresh outcome every time
+  const [status,        setStatus]        = useState("");
+  const [notes,         setNotes]         = useState("");
+  const [avoidReasons,  setAvoidReasons]  = useState([]);
+  const [showLeadForm,  setShowLeadForm]  = useState(false);
+  const [leadInfo,      setLeadInfo]      = useState({ name: "", phone: "", email: "", service: "", grade: "", note: "" });
+  const [saleValue,     setSaleValue]     = useState("");
+  const [historyOpen,   setHistoryOpen]   = useState(false);
+  const [history,       setHistory]       = useState([]);
+  const [historyReady,  setHistoryReady]  = useState(false);
+
+  // Fetch knock history on mount
   useEffect(() => {
     supabase.from("knocks")
       .select("*, profiles(name, color)")
@@ -861,53 +872,62 @@ function HouseModal({ house, onUpdate, onClose }) {
       .then(({ data }) => { setHistory(data || []); setHistoryReady(true); });
   }, [house.id]);
 
+  // Row 1: Avoid | Not Interested
+  // Row 2: No Answer | Answered
+  // Row 3: Got a Lead | Sale!
   const statusButtons = [
-    { key: "no_answer",      label: "No Answer",      bg: "#78350f",  text: "#f6ad55" },
-    { key: "not_interested", label: "Not Interested", bg: "#7f1d1d",  text: "#fc8181" },
-    { key: "answered",       label: "Answered",       bg: "#14532d",  text: "#68d391" },
-    { key: "lead",           label: "Got a Lead! ★",  bg: "#1e3a5f",  text: "#63b3ed" },
-    { key: "avoid",          label: "⛔ Avoid",
-      bg: "repeating-linear-gradient(45deg,#ef4444 0,#ef4444 4px,#fff 4px,#fff 8px)",
-      text: "#dc2626", border: "#dc2626" },
-    { key: "sale",           label: "Sale! 💰",        bg: "#1c1400",  text: "#FFD700" },
+    { key: "avoid",          label: "⛔ Avoid",        bg: "#ffffff",  text: "#dc2626" },
+    { key: "not_interested", label: "Not Interested",  bg: "#7f1d1d",  text: "#fc8181" },
+    { key: "no_answer",      label: "No Answer",       bg: "#78350f",  text: "#f6ad55" },
+    { key: "answered",       label: "Answered",        bg: "#14532d",  text: "#68d391" },
+    { key: "lead",           label: "Got a Lead! ★",   bg: "#1e3a5f",  text: "#63b3ed" },
+    { key: "sale",           label: "Sale! 💰",         bg: "#1c1400",  text: "#FFD700" },
   ];
 
   function handleStatusClick(key) {
     setStatus(key);
     setShowLeadForm(key === "lead");
+    if (key !== "avoid") setAvoidReasons([]);
   }
 
-  const logOutcome = () => onUpdate(house.id, {
-    status,
-    notes,
-    leadInfo: status === "lead" ? leadInfo : status === "sale" ? { saleValue } : null,
-  });
+  function toggleAvoidReason(reason) {
+    setAvoidReasons(prev =>
+      prev.includes(reason) ? prev.filter(r => r !== reason) : [...prev, reason]
+    );
+  }
+
+  const logOutcome = () => {
+    const finalNotes = status === "avoid"
+      ? avoidReasons.join(", ")
+      : notes;
+    onUpdate(house.id, {
+      status,
+      notes: finalNotes,
+      leadInfo: status === "lead" ? leadInfo : status === "sale" ? { saleValue } : null,
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
       <div className="bg-gray-900 rounded-t-3xl p-6 max-h-screen overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-start justify-between mb-5">
+        <div className="flex items-start justify-between mb-4">
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-white font-bold text-lg">{house.number} {house.street}</span>
-              {/* History button */}
+              {/* History button — greyed out if no history */}
               {historyReady && history.length === 0 ? (
-                <span
-                  title="No previous visits"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border border-gray-700 text-gray-600 cursor-not-allowed select-none"
-                >
+                <span title="No previous visits"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border border-gray-800 text-gray-700 cursor-not-allowed select-none">
                   🕐 History
                 </span>
               ) : (
-                <button
-                  onClick={() => setHistoryOpen(o => !o)}
+                <button onClick={() => setHistoryOpen(o => !o)}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border transition-all"
                   style={historyOpen
-                    ? { background: "#0d2a1a", color: "#34d399", borderColor: "#34d399" }
-                    : { color: "#6b7280", borderColor: "#374151" }}
-                >
+                    ? { background: "#0d1f14", color: "#34d399", borderColor: "#34d399" }
+                    : { color: "#6b7280", borderColor: "#374151" }}>
                   🕐 {historyReady ? `History (${history.length})` : "…"}
                 </button>
               )}
@@ -917,24 +937,35 @@ function HouseModal({ house, onUpdate, onClose }) {
           <button onClick={onClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
         </div>
 
-        {/* Expandable history section */}
+        {/* History dropdown — card-per-knock with colored left edge */}
         {historyOpen && historyReady && (
-          <div className="mb-4 bg-gray-800 rounded-xl p-3 border border-gray-700">
-            <div className="text-gray-400 text-xs font-bold tracking-widest uppercase mb-2">Knock History</div>
-            {history.map((k, i) => (
-              <div key={k.id} className={`${i > 0 ? "mt-2 pt-2 border-t border-gray-700" : ""}`}>
-                <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
-                  <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
-                  <span className="text-gray-600">·</span>
-                  <span style={{ color: STATUS_CONFIG[k.status]?.color || "#9ca3af" }} className="font-bold">
-                    {STATUS_CONFIG[k.status]?.label || k.status}
-                  </span>
-                  <span className="text-gray-600">·</span>
-                  <span className="text-gray-500">{formatDate(k.created_at)}</span>
-                </div>
-                {k.notes && <div className="text-gray-400 text-xs italic mt-0.5">Notes: {k.notes}</div>}
-              </div>
-            ))}
+          <div className="mb-4 rounded-xl overflow-hidden border border-gray-800" style={{ background: "#0d1117" }}>
+            <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+              <span className="text-gray-400 text-xs font-bold tracking-widest uppercase">Knock History</span>
+              <span className="text-gray-600 text-xs">{history.length} knock{history.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="p-2 space-y-1.5">
+              {history.map(k => {
+                const scfg = STATUS_CONFIG[k.status];
+                return (
+                  <div key={k.id} className="rounded-lg overflow-hidden flex"
+                    style={{ background: "#111827", borderLeft: `3px solid ${scfg?.color || "#4a5568"}` }}>
+                    <div className="flex-1 px-3 py-2">
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
+                        <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
+                        <span className="text-gray-600">·</span>
+                        <span style={{ color: scfg?.color || "#9ca3af" }} className="font-bold">
+                          {scfg?.label || k.status}
+                        </span>
+                        <span className="text-gray-600">·</span>
+                        <span className="text-gray-500">{formatDate(k.created_at)}</span>
+                      </div>
+                      {k.notes && <div className="text-gray-400 text-xs italic">{k.notes}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -947,15 +978,45 @@ function HouseModal({ house, onUpdate, onClose }) {
               style={{
                 background: btn.bg,
                 color: btn.text,
-                borderColor: status === btn.key ? (btn.border || btn.text) : "transparent",
+                borderColor: status === btn.key ? btn.text : "transparent",
               }}>
               {btn.label}
             </button>
           ))}
         </div>
 
-        {/* Notes — shown for outcomes except lead, sale, unvisited */}
-        {status && !["unvisited", "lead", "sale"].includes(status) && (
+        {/* Avoid reasons — checkboxes */}
+        {status === "avoid" && (
+          <div className="mb-4 bg-gray-800 rounded-xl p-4 border border-red-900">
+            <div className="text-red-400 text-xs font-bold tracking-widest uppercase mb-3">Select all that apply:</div>
+            <div className="space-y-2">
+              {AVOID_REASONS.map(reason => (
+                <label key={reason} className="flex items-center gap-3 cursor-pointer group">
+                  <div
+                    onClick={() => toggleAvoidReason(reason)}
+                    className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
+                    style={{
+                      background: avoidReasons.includes(reason) ? "#dc2626" : "transparent",
+                      borderColor: avoidReasons.includes(reason) ? "#dc2626" : "#4b5563",
+                    }}>
+                    {avoidReasons.includes(reason) && (
+                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                        <path d="M1 4l3 3 5-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm text-gray-300 group-hover:text-white transition-colors"
+                    onClick={() => toggleAvoidReason(reason)}>
+                    {reason}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Notes textarea — for no_answer, not_interested, answered only */}
+        {status && ["no_answer", "not_interested", "answered"].includes(status) && (
           <div className="mb-4">
             <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
             <textarea
@@ -971,12 +1032,10 @@ function HouseModal({ house, onUpdate, onClose }) {
           <div className="mb-4 bg-gray-800 rounded-xl p-4 border" style={{ borderColor: "#FFD70033" }}>
             <div className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: "#FFD700" }}>Sale Details</div>
             <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Estimated Sale Value ($)</label>
-            <input
-              type="number" min="0"
+            <input type="number" min="0"
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
               placeholder="e.g. 1500"
-              value={saleValue} onChange={e => setSaleValue(e.target.value)}
-            />
+              value={saleValue} onChange={e => setSaleValue(e.target.value)} />
           </div>
         )}
 
