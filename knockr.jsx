@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./src/supabase.js";
-import { useJsApiLoader, GoogleMap, Marker, OverlayView, Circle } from "@react-google-maps/api";
+import { useJsApiLoader, GoogleMap, OverlayView, Circle } from "@react-google-maps/api";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -131,23 +131,18 @@ function formatDate(iso) {
 // ══════════════════════════════════════════════════════════════════════════════
 export default function KnockrApp() {
   const [authLoading, setAuthLoading] = useState(true);
+  const [authError,   setAuthError]   = useState(null);
   const [user,        setUser]        = useState(null);
   const [screen,      setScreen]      = useState("rep");
   const [houses,      setHouses]      = useState([]);
   const [session,     setSession]     = useState(null);
   const [elapsed,     setElapsed]     = useState(0);
   const [selectedHouse, setSelectedHouse] = useState(null);
-  const [gpsDot,      setGpsDot]      = useState({ x: 50, y: 50 });
   const [repTab,      setRepTab]      = useState("stats");
   const [sessLoading, setSessLoading] = useState(false);
-  const timerRef = useRef(null);
 
-  // ── Auth bootstrap ──────────────────────────────────────────────────────────
+  // ── Auth bootstrap — onAuthStateChange fires INITIAL_SESSION on mount ───────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      if (s?.user) loadProfile(s.user.id);
-      else setAuthLoading(false);
-    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       if (s?.user) loadProfile(s.user.id);
       else { setUser(null); setAuthLoading(false); }
@@ -156,22 +151,12 @@ export default function KnockrApp() {
   }, []);
 
   async function loadProfile(uid) {
-    const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
+    if (error) { console.error("loadProfile:", error); setAuthError(error.message); }
+    else setAuthError(null);
     setUser(data || null);
     setAuthLoading(false);
   }
-
-  // ── GPS sim ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!session) return;
-    const iv = setInterval(() => {
-      setGpsDot(p => ({
-        x: Math.min(95, Math.max(5, p.x + (Math.random() - 0.5) * 3)),
-        y: Math.min(95, Math.max(5, p.y + (Math.random() - 0.5) * 3)),
-      }));
-    }, 2000);
-    return () => clearInterval(iv);
-  }, [session]);
 
   // ── Timer — restarts from 0 each session, stays at final value for summary ──
   useEffect(() => {
@@ -340,7 +325,7 @@ export default function KnockrApp() {
       <div className="text-cyan-400 text-sm font-mono animate-pulse">Loading…</div>
     </div>
   );
-  if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!user) return <LoginScreen onLogin={handleLogin} authError={authError} />;
   if (user.role === "manager") return <AdminDashboard user={user} onLogout={logout} />;
   if (screen === "summary") return (
     <SummaryScreen metrics={metrics} elapsed={elapsed} user={user}
@@ -430,7 +415,7 @@ function KnockrLogo({ size = "md" }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // LOGIN
 // ══════════════════════════════════════════════════════════════════════════════
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, authError }) {
   const [email,   setEmail]   = useState("");
   const [pw,      setPw]      = useState("");
   const [error,   setError]   = useState("");
@@ -439,7 +424,8 @@ function LoginScreen({ onLogin }) {
   const handleSubmit = async () => {
     setLoading(true); setError("");
     const err = await onLogin(email, pw);
-    if (err) { setError(err); setLoading(false); }
+    if (err) setError(err);
+    setLoading(false);
   };
 
   return (
@@ -462,6 +448,7 @@ function LoginScreen({ onLogin }) {
               placeholder="••••••" value={pw} onChange={e => setPw(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSubmit()} />
           </div>
+          {authError && <div className="mb-4 text-red-400 text-xs text-center">{authError}</div>}
           {error && <div className="mb-4 text-red-400 text-xs text-center">{error}</div>}
           <button onClick={handleSubmit} disabled={loading}
             className="w-full py-3 rounded-lg text-sm font-bold tracking-widest uppercase transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
