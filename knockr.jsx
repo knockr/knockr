@@ -148,15 +148,14 @@ export default function KnockrApp() {
     return () => clearInterval(iv);
   }, [session]);
 
-  // ── Timer — computes from real wall-clock startTime for accuracy ────────────
+  // ── Timer — restarts from 0 each session, stays at final value for summary ──
   useEffect(() => {
-    if (session && !timerRef.current) {
-      timerRef.current = setInterval(() => {
-        setElapsed(Math.floor((Date.now() - session.startTime) / 1000));
-      }, 1000);
-    } else if (!session) {
-      clearInterval(timerRef.current); timerRef.current = null; setElapsed(0);
-    }
+    if (!session) return;
+    setElapsed(0);
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - session.startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
   }, [session]);
 
   const metrics = {
@@ -244,7 +243,7 @@ export default function KnockrApp() {
   if (user.role === "manager") return <AdminDashboard user={user} onLogout={logout} />;
   if (screen === "summary") return (
     <SummaryScreen metrics={metrics} elapsed={elapsed} user={user}
-      onDone={() => { setHouses([]); setScreen("rep"); setRepTab("knock"); }}
+      onDone={() => { setHouses([]); setScreen("rep"); setRepTab("knock"); setElapsed(0); }}
       onLogout={logout} />
   );
 
