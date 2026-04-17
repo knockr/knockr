@@ -349,7 +349,7 @@ export default function KnockrApp() {
   );
 
   return (
-    <div style={{ fontFamily: "'Courier New',monospace" }} className="min-h-screen bg-gray-950 flex flex-col text-white">
+    <div style={{ fontFamily: "'Courier New',monospace", paddingBottom: "env(safe-area-inset-bottom)" }} className="min-h-screen bg-gray-950 flex flex-col text-white">
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0"
@@ -620,7 +620,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="relative" style={{ height: "calc(100vh - 200px)" }}>
+      <div className="relative" style={{ height: "calc(100dvh - 200px)" }}>
         {isLoaded ? (
           <GoogleMap
             mapContainerStyle={{ width: "100%", height: "100%", cursor: session ? "crosshair" : "default" }}
@@ -800,7 +800,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
         </div>
       )}
 
-      <div className="flex flex-wrap gap-x-3 gap-y-1 px-4 py-2 bg-gray-900 border-t border-gray-800">
+      <div className="hidden sm:flex flex-wrap gap-x-3 gap-y-1 px-4 py-2 bg-gray-900 border-t border-gray-800">
         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
           <div key={key} className="flex items-center gap-1 text-xs text-gray-400">
             <div className="w-2 h-2 rounded-sm" style={{ background: cfg.color }} />{cfg.label}
@@ -917,7 +917,7 @@ function HouseModal({ house, onUpdate, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
-      <div className="bg-gray-900 rounded-t-3xl p-6 max-h-screen overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-gray-900 rounded-t-3xl p-6 max-h-[85dvh] overflow-y-auto pb-8" style={{ WebkitOverflowScrolling: "touch" }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
@@ -1036,7 +1036,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             <div className="mt-3">
               <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Additional Notes</label>
               <textarea
-                className="w-full bg-gray-700 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-500 resize-none transition-colors"
+                className="w-full bg-gray-700 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-red-500 resize-none transition-colors"
                 rows={3} placeholder="Add notes (optional)..."
                 value={notes} onChange={e => setNotes(e.target.value)}
               />
@@ -1049,7 +1049,7 @@ function HouseModal({ house, onUpdate, onClose }) {
           <div className="mb-4">
             <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Notes</label>
             <textarea
-              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-cyan-500 resize-none transition-colors"
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-cyan-500 resize-none transition-colors"
               rows={3} placeholder="Add notes (optional)..."
               value={notes} onChange={e => setNotes(e.target.value)}
             />
@@ -1065,7 +1065,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             {[{ label: "Name", key: "name", ph: "Full name" }, { label: "Phone", key: "phone", ph: "(416) 000-0000" }, { label: "Email", key: "email", ph: "email@example.com" }].map(f => (
               <div key={f.key} className="mb-3">
                 <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">{f.label}</label>
-                <input className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                <input className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-blue-500"
                   placeholder={f.ph} value={leadInfo[f.key]} onChange={e => setLeadInfo({ ...leadInfo, [f.key]: e.target.value })} />
               </div>
             ))}
@@ -1105,7 +1105,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             </div>
             <div className={status === "sale" ? "mb-3" : ""}>
               <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Lead Note</label>
-              <textarea className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+              <textarea className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-blue-500 resize-none"
                 rows={2} placeholder="Any details…" value={leadInfo.note} onChange={e => setLeadInfo({ ...leadInfo, note: e.target.value })} />
             </div>
             {status === "sale" && (
@@ -1114,7 +1114,7 @@ function HouseModal({ house, onUpdate, onClose }) {
                   Estimated Sale Value ($)
                 </label>
                 <input type="number" min="0"
-                  className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-yellow-400"
+                  className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-yellow-400"
                   placeholder="e.g. 1500"
                   value={saleValue} onChange={e => setSaleValue(e.target.value)} />
               </div>
