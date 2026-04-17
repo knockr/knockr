@@ -518,7 +518,8 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       let q = supabase.from("houses").select("*").not("lat", "is", null).not("status", "eq", "unvisited");
       if (session?.id) q = q.neq("session_id", session.id);
       const { data } = await q;
-      setPastHouses(data || []);
+      // Ensure dbId is always set so HouseModal can query knocks correctly
+      setPastHouses((data || []).map(h => ({ ...h, dbId: h.id })));
     }
     loadPastHouses();
   }, [session?.id]);
@@ -863,14 +864,21 @@ function HouseModal({ house, onUpdate, onClose }) {
   const [history,       setHistory]       = useState([]);
   const [historyReady,  setHistoryReady]  = useState(false);
 
-  // Fetch knock history on mount
+  // Fetch knock history on mount — use dbId (set for past houses) or fall back to id
   useEffect(() => {
+    const houseId = house.dbId || house.id;
+    console.log("[History] fetching knocks for house_id:", houseId, house);
     supabase.from("knocks")
       .select("*, profiles(name, color)")
-      .eq("house_id", house.id)
+      .eq("house_id", houseId)
       .order("created_at", { ascending: false })
-      .then(({ data }) => { setHistory(data || []); setHistoryReady(true); });
-  }, [house.id]);
+      .then(({ data, error }) => {
+        if (error) console.error("[History] query error:", error);
+        else console.log("[History] knocks result:", data);
+        setHistory(data || []);
+        setHistoryReady(true);
+      });
+  }, [house.dbId, house.id]);
 
   // Row 1: Avoid | Not Interested
   // Row 2: No Answer | Answered
@@ -916,11 +924,11 @@ function HouseModal({ house, onUpdate, onClose }) {
           <div className="flex-1 min-w-0 pr-2">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-white font-bold text-lg">{house.number} {house.street}</span>
-              {/* History button — greyed out if no history */}
+              {/* History button — always clickable; greyed only when confirmed empty */}
               {historyReady && history.length === 0 ? (
                 <span title="No previous visits"
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border border-gray-800 text-gray-700 cursor-not-allowed select-none">
-                  🕐 History
+                  🕐 No History
                 </span>
               ) : (
                 <button onClick={() => setHistoryOpen(o => !o)}
@@ -928,7 +936,7 @@ function HouseModal({ house, onUpdate, onClose }) {
                   style={historyOpen
                     ? { background: "#0d1f14", color: "#34d399", borderColor: "#34d399" }
                     : { color: "#6b7280", borderColor: "#374151" }}>
-                  🕐 {historyReady ? `History (${history.length})` : "…"}
+                  🕐 {!historyReady ? "History" : `History (${history.length})`}
                 </button>
               )}
             </div>
@@ -937,34 +945,40 @@ function HouseModal({ house, onUpdate, onClose }) {
           <button onClick={onClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
         </div>
 
-        {/* History dropdown — card-per-knock with colored left edge */}
-        {historyOpen && historyReady && (
+        {/* History dropdown — always renders when open; loading/empty states inside */}
+        {historyOpen && (
           <div className="mb-4 rounded-xl overflow-hidden border border-gray-800" style={{ background: "#0d1117" }}>
             <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
               <span className="text-gray-400 text-xs font-bold tracking-widest uppercase">Knock History</span>
-              <span className="text-gray-600 text-xs">{history.length} knock{history.length !== 1 ? "s" : ""}</span>
+              {historyReady && <span className="text-gray-600 text-xs">{history.length} knock{history.length !== 1 ? "s" : ""}</span>}
             </div>
             <div className="p-2 space-y-1.5">
-              {history.map(k => {
-                const scfg = STATUS_CONFIG[k.status];
-                return (
-                  <div key={k.id} className="rounded-lg overflow-hidden flex"
-                    style={{ background: "#111827", borderLeft: `3px solid ${scfg?.color || "#4a5568"}` }}>
-                    <div className="flex-1 px-3 py-2">
-                      <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
-                        <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
-                        <span className="text-gray-600">·</span>
-                        <span style={{ color: scfg?.color || "#9ca3af" }} className="font-bold">
-                          {scfg?.label || k.status}
-                        </span>
-                        <span className="text-gray-600">·</span>
-                        <span className="text-gray-500">{formatDate(k.created_at)}</span>
+              {!historyReady ? (
+                <div className="px-2 py-3 text-gray-500 text-xs font-mono animate-pulse">Loading…</div>
+              ) : history.length === 0 ? (
+                <div className="px-2 py-3 text-gray-600 text-xs">No previous visits recorded.</div>
+              ) : (
+                history.map(k => {
+                  const scfg = STATUS_CONFIG[k.status];
+                  return (
+                    <div key={k.id} className="rounded-lg overflow-hidden flex"
+                      style={{ background: "#111827", borderLeft: `3px solid ${scfg?.color || "#4a5568"}` }}>
+                      <div className="flex-1 px-3 py-2">
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs mb-0.5">
+                          <span className="text-white font-bold">{k.profiles?.name || "Unknown"}</span>
+                          <span className="text-gray-600">·</span>
+                          <span style={{ color: scfg?.color || "#9ca3af" }} className="font-bold">
+                            {scfg?.label || k.status}
+                          </span>
+                          <span className="text-gray-600">·</span>
+                          <span className="text-gray-500">{formatDate(k.created_at)}</span>
+                        </div>
+                        {k.notes && <div className="text-gray-400 text-xs italic">{k.notes}</div>}
                       </div>
-                      {k.notes && <div className="text-gray-400 text-xs italic">{k.notes}</div>}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
         )}
