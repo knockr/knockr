@@ -143,8 +143,9 @@ export default function KnockrApp() {
   const [session,     setSession]     = useState(null);
   const [elapsed,     setElapsed]     = useState(0);
   const [selectedHouse, setSelectedHouse] = useState(null);
-  const [repTab,      setRepTab]      = useState("stats");
-  const [sessLoading, setSessLoading] = useState(false);
+  const [repTab,          setRepTab]          = useState("stats");
+  const [sessLoading,     setSessLoading]     = useState(false);
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
 
   // ── Auth bootstrap — onAuthStateChange fires INITIAL_SESSION on mount ───────
   useEffect(() => {
@@ -223,6 +224,7 @@ export default function KnockrApp() {
         leads_count:   metrics.leads,
       }).eq("id", session.id);
     }
+    setStatsRefreshKey(k => k + 1);
     setSession(null);
     setScreen("summary");
   };
@@ -394,7 +396,7 @@ export default function KnockrApp() {
           onUpdateSession={handleUpdateSession}
           onReKnock={handleReKnock} />
       )}
-      {repTab === "stats" && <StatsTab user={user} />}
+      {repTab === "stats" && <StatsTab user={user} statsRefreshKey={statsRefreshKey} />}
     </div>
   );
 }
@@ -1176,12 +1178,13 @@ function HouseModal({ house, onUpdate, onClose }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // STATS TAB — loads from Supabase
 // ══════════════════════════════════════════════════════════════════════════════
-function StatsTab({ user }) {
+function StatsTab({ user, statsRefreshKey }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState("overview");
 
   useEffect(() => {
+    setLoading(true);
     async function load() {
       const [{ data: sessions }, { data: leads }] = await Promise.all([
         supabase.from("sessions").select("*").eq("rep_id", user.id).order("started_at", { ascending: false }),
@@ -1191,7 +1194,7 @@ function StatsTab({ user }) {
       setLoading(false);
     }
     load();
-  }, [user.id]);
+  }, [user.id, statsRefreshKey]);
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><div className="text-cyan-400 text-sm font-mono animate-pulse">Loading stats…</div></div>;
 
@@ -1215,8 +1218,9 @@ function StatsTab({ user }) {
   // Monthly grouping — oldest first
   const monthlyMap = {};
   sessions.forEach(s => {
-    const key = new Date(s.started_at).toLocaleString("en-US", { month: "short" });
-    if (!monthlyMap[key]) monthlyMap[key] = { month: key, doors: 0, leads: 0, ts: new Date(s.started_at).getTime() };
+    const d   = new Date(s.started_at);
+    const key = d.toLocaleString("en-US", { month: "short", year: "numeric" });
+    if (!monthlyMap[key]) monthlyMap[key] = { month: key, doors: 0, leads: 0, ts: d.getTime() };
     monthlyMap[key].doors += s.doors_knocked || 0;
     monthlyMap[key].leads += s.leads_count   || 0;
   });
@@ -1225,7 +1229,7 @@ function StatsTab({ user }) {
 
   const gradeCounts = Object.fromEntries(Object.keys(GRADES).map(g => [g, leads.filter(l => l.grade === g).length]));
 
-  const recentSessions = sessions.slice(0, 5).map(s => ({
+  const allSessionsFormatted = sessions.map(s => ({
     date:         formatDate(s.started_at),
     neighborhood: s.neighborhood,
     doors:        s.doors_knocked  || 0,
@@ -1273,7 +1277,7 @@ function StatsTab({ user }) {
                   {monthly.map(m => (
                     <div key={m.month}>
                       <div className="flex justify-between text-xs mb-1.5">
-                        <span className="text-gray-300 font-bold">{m.month} 2026</span>
+                        <span className="text-gray-300 font-bold">{m.month}</span>
                         <span className="text-gray-400">{m.doors} doors · <span style={{ color: user.color }} className="font-bold">{m.leads} leads</span></span>
                       </div>
                       <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
@@ -1310,10 +1314,12 @@ function StatsTab({ user }) {
 
             <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
               <div className="px-5 py-3 border-b border-gray-800"><span className="text-white font-bold text-sm">Service Breakdown</span></div>
-              {Object.entries(SERVICES).map(([s, cfg], i, arr) => {
+              {(() => {
+                const leadsWithService = leads.filter(l => l.service);
+                return Object.entries(SERVICES).map(([s, cfg], i, arr) => {
                 const serviceLeads = leads.filter(l => l.service === s);
                 const count = serviceLeads.length;
-                const pct   = leads.length > 0 ? Math.round((count / leads.length) * 100) : 0;
+                const pct   = leadsWithService.length > 0 ? Math.round((count / leadsWithService.length) * 100) : 0;
                 return (
                   <div key={s} className={`px-5 py-4 ${i < arr.length - 1 ? "border-b border-gray-800" : ""}`}>
                     <div className="flex items-center gap-4 mb-3">
@@ -1327,11 +1333,11 @@ function StatsTab({ user }) {
                           <span className="font-bold" style={{ color: cfg.color }}>{count} leads · {pct}%</span>
                         </div>
                         <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${leads.length > 0 ? (count / leads.length) * 100 : 0}%`, background: cfg.color }} />
+                          <div className="h-full rounded-full" style={{ width: `${leadsWithService.length > 0 ? (count / leadsWithService.length) * 100 : 0}%`, background: cfg.color }} />
                         </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-4 gap-2 ml-13">
+                    <div className="grid grid-cols-4 gap-2 ml-12">
                       {Object.entries(GRADES).map(([g, gcfg]) => {
                         const gc = serviceLeads.filter(l => l.grade === g).length;
                         const gp = count > 0 ? Math.round((gc / count) * 100) : 0;
@@ -1346,7 +1352,8 @@ function StatsTab({ user }) {
                     </div>
                   </div>
                 );
-              })}
+              });
+              })()}
             </div>
           </>
         )}
@@ -1389,12 +1396,12 @@ function StatsTab({ user }) {
 
         {section === "sessions" && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-800"><span className="text-white font-bold text-sm">Recent Sessions</span></div>
-            {recentSessions.length === 0
+            <div className="px-5 py-3 border-b border-gray-800"><span className="text-white font-bold text-sm">All Sessions</span></div>
+            {allSessionsFormatted.length === 0
               ? <div className="px-5 py-10 text-center text-gray-600 text-sm">No sessions yet.</div>
               : (
                 <div className="divide-y divide-gray-800">
-                  {recentSessions.map((s, i) => {
+                  {allSessionsFormatted.map((s, i) => {
                     const sr = s.doors > 0 ? Math.round((s.answered / s.doors) * 100) : 0;
                     const lr = s.answered > 0 ? Math.round((s.leads / s.answered) * 100) : 0;
                     return (
@@ -1981,8 +1988,9 @@ function AdminRepDetail({ rep, sessions, leads, sub, setSub, onBack }) {
 
   const monthlyMap = {};
   sessions.forEach(s => {
-    const key = new Date(s.started_at).toLocaleString("en-US", { month: "short" });
-    if (!monthlyMap[key]) monthlyMap[key] = { month: key, doors: 0, leads: 0, ts: new Date(s.started_at).getTime() };
+    const d   = new Date(s.started_at);
+    const key = d.toLocaleString("en-US", { month: "short", year: "numeric" });
+    if (!monthlyMap[key]) monthlyMap[key] = { month: key, doors: 0, leads: 0, ts: d.getTime() };
     monthlyMap[key].doors += s.doors_knocked || 0;
     monthlyMap[key].leads += s.leads_count   || 0;
   });
@@ -2069,7 +2077,7 @@ function AdminRepDetail({ rep, sessions, leads, sub, setSub, onBack }) {
             : monthly.map(m => (
                 <div key={m.month}>
                   <div className="flex justify-between text-xs mb-1.5">
-                    <span className="text-gray-300 font-bold">{m.month} 2026</span>
+                    <span className="text-gray-300 font-bold">{m.month}</span>
                     <span className="text-gray-400">{m.doors} doors · <span style={{ color: rep.color }} className="font-bold">{m.leads} leads</span></span>
                   </div>
                   <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden">
