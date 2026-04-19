@@ -143,9 +143,11 @@ export default function KnockrApp() {
   const [session,     setSession]     = useState(null);
   const [elapsed,     setElapsed]     = useState(0);
   const [selectedHouse, setSelectedHouse] = useState(null);
-  const [repTab,          setRepTab]          = useState("stats");
-  const [sessLoading,     setSessLoading]     = useState(false);
-  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+  const [repTab,                  setRepTab]                  = useState("stats");
+  const [sessLoading,             setSessLoading]             = useState(false);
+  const [statsRefreshKey,         setStatsRefreshKey]         = useState(0);
+  const [lastSessionNeighborhood, setLastSessionNeighborhood] = useState(null);
+  const [pastHousesRefreshKey,    setPastHousesRefreshKey]    = useState(0);
 
   // ── Auth bootstrap — onAuthStateChange fires INITIAL_SESSION on mount ───────
   useEffect(() => {
@@ -175,7 +177,8 @@ export default function KnockrApp() {
   }, [session]);
 
   const metrics = {
-    knocked:       houses.filter(h => h.status !== "unvisited").length,
+    attempted:     houses.filter(h => h.status !== "unvisited").length,
+    knocked:       houses.filter(h => ["no_answer", "not_interested", "answered", "lead", "sale"].includes(h.status)).length,
     answered:      houses.filter(h => ["answered", "lead", "sale"].includes(h.status)).length,
     notInterested: houses.filter(h => h.status === "not_interested").length,
     noAnswer:      houses.filter(h => h.status === "no_answer").length,
@@ -224,6 +227,7 @@ export default function KnockrApp() {
         leads_count:   metrics.leads,
       }).eq("id", session.id);
     }
+    setLastSessionNeighborhood(session?.neighborhood || null);
     setStatsRefreshKey(k => k + 1);
     setSession(null);
     setScreen("summary");
@@ -349,7 +353,8 @@ export default function KnockrApp() {
   if (user.role === "manager") return <AdminDashboard user={user} onLogout={logout} />;
   if (screen === "summary") return (
     <SummaryScreen metrics={metrics} elapsed={elapsed} user={user}
-      onDone={() => { setHouses([]); setScreen("rep"); setRepTab("knock"); setElapsed(0); }}
+      neighborhood={lastSessionNeighborhood}
+      onDone={() => { setHouses([]); setScreen("rep"); setRepTab("knock"); setElapsed(0); setPastHousesRefreshKey(k => k + 1); }}
       onLogout={logout} />
   );
 
@@ -389,6 +394,7 @@ export default function KnockrApp() {
         <KnockTab user={user} houses={houses} session={session} metrics={metrics}
           selectedHouse={selectedHouse} onSelectHouse={setSelectedHouse}
           sessLoading={sessLoading}
+          pastHousesRefreshKey={pastHousesRefreshKey}
           onStartSession={handleStartSession}
           onEndSession={handleEndSession}
           onUpdateHouse={handleUpdateHouse}
@@ -484,7 +490,7 @@ function LoginScreen({ onLogin, authError }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // KNOCK TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, onReKnock, sessLoading }) {
+function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse, onStartSession, onEndSession, onUpdateHouse, onAddHouse, onUpdateSession, onReKnock, sessLoading, pastHousesRefreshKey }) {
   const [gpsPos,           setGpsPos]           = useState({ lat: 43.6894, lng: -79.3590 });
   const [gpsAccuracy,      setGpsAccuracy]      = useState(null);
   const [toast,            setToast]            = useState(null);
@@ -534,7 +540,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
       setPastHousesLoaded(true);
     }
     loadPastHouses();
-  }, [session?.id]);
+  }, [session?.id, pastHousesRefreshKey]);
 
   // Reset loaded flag when session changes so taps are blocked until new load completes
   useEffect(() => { setPastHousesLoaded(false); }, [session?.id]);
@@ -1439,7 +1445,7 @@ function StatsTab({ user, statsRefreshKey }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // SUMMARY SCREEN
 // ══════════════════════════════════════════════════════════════════════════════
-function SummaryScreen({ metrics, elapsed, user, onDone, onLogout }) {
+function SummaryScreen({ metrics, elapsed, user, neighborhood, onDone, onLogout }) {
   const answerRate = metrics.knocked  > 0 ? Math.round((metrics.answered / metrics.knocked)  * 100) : 0;
   const leadRate   = metrics.answered > 0 ? Math.round((metrics.leads    / metrics.answered) * 100) : 0;
   const rows = [
@@ -1459,7 +1465,7 @@ function SummaryScreen({ metrics, elapsed, user, onDone, onLogout }) {
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="text-cyan-400 font-black text-2xl tracking-tighter">SESSION COMPLETE</div>
-          <div className="text-gray-500 text-xs mt-1">{user?.name} · Current Location</div>
+          <div className="text-gray-500 text-xs mt-1">{user?.name} · {neighborhood || "Current Location"}</div>
         </div>
         <button onClick={onLogout} className="text-gray-600 hover:text-gray-400 text-xs">Logout</button>
       </div>
