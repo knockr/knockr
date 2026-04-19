@@ -229,24 +229,28 @@ export default function KnockrApp() {
 
   const handleUpdateHouse = async (id, updates) => {
     const house = houses.find(h => h.id === id);
-    setHouses(prev => prev.map(h => h.id === id ? { ...h, ...updates } : h));
-    setSelectedHouse(null);
-    if (!house?.dbId) return;
+    if (!house?.dbId) {
+      setHouses(prev => prev.map(h => h.id === id ? { ...h, ...updates } : h));
+      setSelectedHouse(null);
+      return;
+    }
 
-    await supabase.from("knocks").insert({
+    const { error: knockErr } = await supabase.from("knocks").insert({
       house_id:   house.dbId,
       rep_id:     user.id,
       session_id: session.id,
       status:     updates.status,
       notes:      updates.notes || "",
     });
+    if (knockErr) throw knockErr;
 
-    await supabase.from("houses")
+    const { error: houseErr } = await supabase.from("houses")
       .update({ status: updates.status, notes: updates.notes || "", updated_at: new Date().toISOString() })
       .eq("id", house.dbId);
+    if (houseErr) throw houseErr;
 
     if (updates.status === "lead" && updates.leadInfo) {
-      await supabase.from("leads").insert({
+      const { error: leadErr } = await supabase.from("leads").insert({
         house_id:     house.dbId,
         session_id:   session.id,
         rep_id:       user.id,
@@ -259,9 +263,10 @@ export default function KnockrApp() {
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
+      if (leadErr) throw leadErr;
     }
     if (updates.status === "sale" && updates.leadInfo) {
-      await supabase.from("leads").insert({
+      const { error: leadErr } = await supabase.from("leads").insert({
         house_id:     house.dbId,
         session_id:   session.id,
         rep_id:       user.id,
@@ -274,26 +279,32 @@ export default function KnockrApp() {
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
+      if (leadErr) throw leadErr;
     }
+
+    setHouses(prev => prev.map(h => h.id === id ? { ...h, ...updates } : h));
+    setSelectedHouse(null);
   };
 
   const handleReKnock = async (house, updates) => {
     if (!session) return;
 
-    await supabase.from("knocks").insert({
+    const { error: knockErr } = await supabase.from("knocks").insert({
       house_id:   house.id,
       rep_id:     user.id,
       session_id: session.id,
       status:     updates.status,
       notes:      updates.notes || "",
     });
+    if (knockErr) throw knockErr;
 
-    await supabase.from("houses")
+    const { error: houseErr } = await supabase.from("houses")
       .update({ status: updates.status, notes: updates.notes || "", updated_at: new Date().toISOString() })
       .eq("id", house.id);
+    if (houseErr) throw houseErr;
 
     if (updates.status === "lead" && updates.leadInfo) {
-      await supabase.from("leads").insert({
+      const { error: leadErr } = await supabase.from("leads").insert({
         house_id:     house.id,
         session_id:   session.id,
         rep_id:       user.id,
@@ -306,9 +317,10 @@ export default function KnockrApp() {
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
+      if (leadErr) throw leadErr;
     }
     if (updates.status === "sale" && updates.leadInfo) {
-      await supabase.from("leads").insert({
+      const { error: leadErr } = await supabase.from("leads").insert({
         house_id:     house.id,
         session_id:   session.id,
         rep_id:       user.id,
@@ -321,6 +333,7 @@ export default function KnockrApp() {
         neighborhood: session.neighborhood,
         address:      `${house.number} ${house.street}`,
       });
+      if (leadErr) throw leadErr;
     }
   };
 
@@ -868,18 +881,18 @@ function HouseModal({ house, onUpdate, onClose }) {
   const [historyOpen,   setHistoryOpen]   = useState(false);
   const [history,       setHistory]       = useState([]);
   const [historyReady,  setHistoryReady]  = useState(false);
+  const [submitting,    setSubmitting]    = useState(false);
+  const [dirty,         setDirty]         = useState(false);
 
   // Fetch knock history on mount — use dbId (set for past houses) or fall back to id
   useEffect(() => {
     const houseId = house.dbId || house.id;
-    console.log("[History] fetching knocks for house_id:", houseId, house);
     supabase.from("knocks")
       .select("*, profiles(name, color)")
       .eq("house_id", houseId)
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("[History] query error:", error);
-        else console.log("[History] knocks result:", data);
         setHistory(data || []);
         setHistoryReady(true);
       });
@@ -901,27 +914,49 @@ function HouseModal({ house, onUpdate, onClose }) {
     setStatus(key);
     setShowLeadForm(key === "lead" || key === "sale");
     if (key !== "avoid") setAvoidReasons([]);
+    setDirty(true);
   }
 
   function toggleAvoidReason(reason) {
     setAvoidReasons(prev =>
       prev.includes(reason) ? prev.filter(r => r !== reason) : [...prev, reason]
     );
+    setDirty(true);
   }
 
-  const logOutcome = () => {
-    const finalNotes = status === "avoid"
-      ? avoidReasons.join(", ") + (notes.trim() ? ` | ${notes.trim()}` : "")
-      : notes;
-    onUpdate(house.id, {
-      status,
-      notes: finalNotes,
-      leadInfo: status === "lead" ? leadInfo : status === "sale" ? { ...leadInfo, saleValue } : null,
-    });
+  const canSubmit = (() => {
+    if (!status || status === "unvisited") return false;
+    if (status === "avoid") return avoidReasons.length > 0;
+    if (status === "lead") return !!(leadInfo.name.trim() && leadInfo.phone.trim() && leadInfo.grade);
+    if (status === "sale") return !!(leadInfo.name.trim() && leadInfo.phone.trim() && leadInfo.grade && parseFloat(saleValue) > 0);
+    return true;
+  })();
+
+  const logOutcome = async () => {
+    setSubmitting(true);
+    try {
+      const finalNotes = status === "avoid"
+        ? avoidReasons.join(", ") + (notes.trim() ? ` | ${notes.trim()}` : "")
+        : notes;
+      await onUpdate(house.id, {
+        status,
+        notes: finalNotes,
+        leadInfo: status === "lead" ? leadInfo : status === "sale" ? { ...leadInfo, saleValue } : null,
+      });
+    } catch (err) {
+      alert("Failed to save. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  function tryClose() {
+    if (dirty && !window.confirm("Discard this knock?")) return;
+    onClose();
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: "rgba(0,0,0,0.8)" }} onClick={tryClose}>
       <div className="bg-gray-900 rounded-t-3xl p-6 max-h-[85dvh] overflow-y-auto pb-8" style={{ WebkitOverflowScrolling: "touch" }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -940,7 +975,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             </div>
             <div className="text-gray-500 text-xs">Select an outcome</div>
           </div>
-          <button onClick={onClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
+          <button onClick={tryClose} className="text-gray-500 text-2xl leading-none flex-shrink-0">×</button>
         </div>
 
         {/* History dropdown */}
@@ -1043,7 +1078,7 @@ function HouseModal({ house, onUpdate, onClose }) {
               <textarea
                 className="w-full bg-gray-700 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-red-500 resize-none transition-colors"
                 rows={3} placeholder="Add notes (optional)..."
-                value={notes} onChange={e => setNotes(e.target.value)}
+                value={notes} onChange={e => { setNotes(e.target.value); setDirty(true); }}
               />
             </div>
           </div>
@@ -1056,7 +1091,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             <textarea
               className="w-full bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2.5 text-base focus:outline-none focus:border-cyan-500 resize-none transition-colors"
               rows={3} placeholder="Add notes (optional)..."
-              value={notes} onChange={e => setNotes(e.target.value)}
+              value={notes} onChange={e => { setNotes(e.target.value); setDirty(true); }}
             />
           </div>
         )}
@@ -1071,14 +1106,14 @@ function HouseModal({ house, onUpdate, onClose }) {
               <div key={f.key} className="mb-3">
                 <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">{f.label}</label>
                 <input className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-blue-500"
-                  placeholder={f.ph} value={leadInfo[f.key]} onChange={e => setLeadInfo({ ...leadInfo, [f.key]: e.target.value })} />
+                  placeholder={f.ph} value={leadInfo[f.key]} onChange={e => { setLeadInfo({ ...leadInfo, [f.key]: e.target.value }); setDirty(true); }} />
               </div>
             ))}
             <div className="mb-3">
               <label className="block text-gray-400 text-xs mb-2 uppercase tracking-wider">Lead Grade</label>
               <div className="grid grid-cols-4 gap-2">
                 {Object.entries(GRADES).map(([g, cfg]) => (
-                  <button key={g} onClick={() => setLeadInfo({ ...leadInfo, grade: g })}
+                  <button key={g} onClick={() => { setLeadInfo({ ...leadInfo, grade: g }); setDirty(true); }}
                     className="py-2.5 rounded-xl font-black text-lg transition-all border-2"
                     style={leadInfo.grade === g
                       ? { background: cfg.bg, color: cfg.color, borderColor: cfg.color, boxShadow: `0 0 10px ${cfg.color}44` }
@@ -1100,7 +1135,7 @@ function HouseModal({ house, onUpdate, onClose }) {
               <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Service</label>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(SERVICES).map(([s, cfg]) => (
-                  <button key={s} onClick={() => setLeadInfo({ ...leadInfo, service: s })}
+                  <button key={s} onClick={() => { setLeadInfo({ ...leadInfo, service: s }); setDirty(true); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all border"
                     style={leadInfo.service === s ? { background: cfg.bg, color: cfg.color, borderColor: cfg.color } : { color: "#4b5563", borderColor: "#374151" }}>
                     {s}
@@ -1111,7 +1146,7 @@ function HouseModal({ house, onUpdate, onClose }) {
             <div className={status === "sale" ? "mb-3" : ""}>
               <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Lead Note</label>
               <textarea className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-blue-500 resize-none"
-                rows={2} placeholder="Any details…" value={leadInfo.note} onChange={e => setLeadInfo({ ...leadInfo, note: e.target.value })} />
+                rows={2} placeholder="Any details…" value={leadInfo.note} onChange={e => { setLeadInfo({ ...leadInfo, note: e.target.value }); setDirty(true); }} />
             </div>
             {status === "sale" && (
               <div>
@@ -1121,17 +1156,17 @@ function HouseModal({ house, onUpdate, onClose }) {
                 <input type="number" min="0"
                   className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-base focus:outline-none focus:border-yellow-400"
                   placeholder="e.g. 1500"
-                  value={saleValue} onChange={e => setSaleValue(e.target.value)} />
+                  value={saleValue} onChange={e => { setSaleValue(e.target.value); setDirty(true); }} />
               </div>
             )}
           </div>
         )}
 
         <button onClick={logOutcome}
-          disabled={!status || status === "unvisited"}
+          disabled={!canSubmit || submitting}
           className="w-full py-3 rounded-xl font-black text-sm tracking-widest uppercase transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
           style={{ background: "linear-gradient(135deg,#00e5ff,#0070ff)", color: "#000" }}>
-          LOG OUTCOME
+          {submitting ? "Saving…" : "LOG OUTCOME"}
         </button>
       </div>
     </div>
