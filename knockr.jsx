@@ -1193,7 +1193,7 @@ function StatsTab({ user, statsRefreshKey }) {
   useEffect(() => {
     setLoading(true);
     async function load() {
-      const [{ data: sessions }, { data: leads }, { data: followUpHouses }] = await Promise.all([
+      const [{ data: sessions }, { data: leads }, { data: followUpHouses }, { data: allHouses }] = await Promise.all([
         supabase.from("sessions").select("*").eq("rep_id", user.id).order("started_at", { ascending: false }),
         supabase.from("leads").select("*").eq("rep_id", user.id).order("created_at", { ascending: false }),
         supabase.from("houses")
@@ -1202,8 +1202,9 @@ function StatsTab({ user, statsRefreshKey }) {
           .in("status", ["answered", "no_answer"])
           .not("notes", "eq", "")
           .order("updated_at", { ascending: false }),
+        supabase.from("houses").select("id, status").eq("rep_id", user.id),
       ]);
-      setData({ sessions: sessions || [], leads: leads || [], followUpHouses: followUpHouses || [] });
+      setData({ sessions: sessions || [], leads: leads || [], followUpHouses: followUpHouses || [], allHouses: allHouses || [] });
       setLoading(false);
     }
     load();
@@ -1211,12 +1212,12 @@ function StatsTab({ user, statsRefreshKey }) {
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><div className="text-cyan-400 text-sm font-mono animate-pulse">Loading stats…</div></div>;
 
-  const { sessions, leads, followUpHouses } = data;
+  const { sessions, leads, followUpHouses, allHouses } = data;
   const needsFollowUp     = followUpHouses.filter(h => h.status === "answered");
   const noAnswerWithNotes = followUpHouses.filter(h => h.status === "no_answer");
-  const totalDoors    = sessions.reduce((s, r) => s + (r.doors_knocked  || 0), 0);
-  const totalAnswered = sessions.reduce((s, r) => s + (r.doors_answered || 0), 0);
-  const totalLeads    = sessions.reduce((s, r) => s + (r.leads_count    || 0), 0);
+  const totalDoors    = allHouses.filter(h => h.status !== "unvisited" && h.status !== "avoid").length;
+  const totalAnswered = allHouses.filter(h => ["answered", "lead", "sale"].includes(h.status)).length;
+  const totalLeads    = leads.length;
   const totalMs       = sessions.reduce((s, r) => s + (r.ended_at ? new Date(r.ended_at) - new Date(r.started_at) : 0), 0);
   const lifetime = {
     sessions: sessions.length,
@@ -1946,18 +1947,19 @@ function TotalsTab() {
       supabase.from("leads").select("*"),
       supabase.from("profiles").select("*").eq("role", "rep"),
       supabase.from("neighborhoods").select("*").order("lead_rate", { ascending: false }),
-    ]).then(([{ data: sessions }, { data: leads }, { data: reps }, { data: hoods }]) => {
-      setData({ sessions: sessions || [], leads: leads || [], reps: reps || [], hoods: hoods || [] });
+      supabase.from("houses").select("id, status"),
+    ]).then(([{ data: sessions }, { data: leads }, { data: reps }, { data: hoods }, { data: houses }]) => {
+      setData({ sessions: sessions || [], leads: leads || [], reps: reps || [], hoods: hoods || [], houses: houses || [] });
       setLoading(false);
     });
   }, []);
 
   if (loading) return <Spinner />;
 
-  const { sessions, leads, reps, hoods } = data;
-  const totalDoors    = sessions.reduce((s, r) => s + (r.doors_knocked  || 0), 0);
-  const totalAnswered = sessions.reduce((s, r) => s + (r.doors_answered || 0), 0);
-  const totalLeads    = sessions.reduce((s, r) => s + (r.leads_count    || 0), 0);
+  const { sessions, leads, reps, hoods, houses } = data;
+  const totalDoors    = houses.filter(h => h.status !== "unvisited" && h.status !== "avoid").length;
+  const totalAnswered = houses.filter(h => ["answered", "lead", "sale"].includes(h.status)).length;
+  const totalLeads    = leads.length;
   const totalSessions = sessions.length;
   const respRate = totalDoors    > 0 ? Math.round((totalAnswered / totalDoors)    * 100) : 0;
   const lRate    = totalAnswered > 0 ? Math.round((totalLeads    / totalAnswered) * 100) : 0;
