@@ -67,7 +67,7 @@ const STATUS_CONFIG = {
   unvisited:      { color: "#4a5568", label: "Not Visited",    icon: "○", textColor: "#fff" },
   no_answer:      { color: "#f6ad55", label: "No Answer",      icon: "—", textColor: "#fff" },
   not_interested: { color: "#fc8181", label: "Not Interested", icon: "✕", textColor: "#fff" },
-  answered:       { color: "#68d391", label: "Answered",       icon: "✓", textColor: "#fff" },
+  answered:       { color: "#68d391", label: "Needs Follow Up", icon: "✓", textColor: "#fff" },
   lead:           { color: "#63b3ed", label: "Lead!",          icon: "★", textColor: "#fff" },
   avoid:          { color: "#ef4444", label: "Avoid",          icon: "⛔", textColor: "#fff", stripe: true },
   sale:           { color: "#FFD700", label: "Sale",           icon: "💰", textColor: "#000" },
