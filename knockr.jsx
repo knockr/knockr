@@ -563,7 +563,7 @@ function KnockTab({ user, houses, session, metrics, selectedHouse, onSelectHouse
     const tapLng = e.latLng.lng();
 
     // Proximity check — rep must be within 50m of the tap
-    if (gpsAccuracy != null && gpsAccuracy > 30) {
+    if (gpsAccuracy != null && gpsAccuracy > 50) {
       showToast("GPS signal weak — move to open sky for better accuracy.");
       return;
     }
