@@ -350,7 +350,7 @@ export default function KnockrApp() {
     </div>
   );
   if (!user) return <LoginScreen onLogin={handleLogin} authError={authError} />;
-  if (user.role === "manager") return <AdminDashboard user={user} onLogout={logout} />;
+  if (user.role === "manager" || user.role === "admin") return <AdminDashboard user={user} onLogout={logout} />;
   if (screen === "summary") return (
     <SummaryScreen metrics={metrics} elapsed={elapsed} user={user}
       neighborhood={lastSessionNeighborhood}
