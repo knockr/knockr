@@ -913,7 +913,7 @@ function HouseModal({ house, onUpdate, onClose }) {
     { key: "avoid",          label: "⛔ Avoid",        bg: "#ffffff",  text: "#dc2626" },
     { key: "not_interested", label: "Not Interested",  bg: "#7f1d1d",  text: "#fc8181" },
     { key: "no_answer",      label: "No Answer",       bg: "#78350f",  text: "#f6ad55" },
-    { key: "answered",       label: "Answered",        bg: "#14532d",  text: "#68d391" },
+    { key: "answered",       label: "Needs Follow Up", bg: "#14532d",  text: "#68d391" },
     { key: "lead",           label: "Got a Lead! ★",   bg: "#1e3a5f",  text: "#63b3ed" },
     { key: "sale",           label: "Sale! 💰",         bg: "#1c1400",  text: "#FFD700" },
   ];
