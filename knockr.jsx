@@ -1192,11 +1192,17 @@ function StatsTab({ user, statsRefreshKey }) {
   useEffect(() => {
     setLoading(true);
     async function load() {
-      const [{ data: sessions }, { data: leads }] = await Promise.all([
+      const [{ data: sessions }, { data: leads }, { data: followUpHouses }] = await Promise.all([
         supabase.from("sessions").select("*").eq("rep_id", user.id).order("started_at", { ascending: false }),
         supabase.from("leads").select("*").eq("rep_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("houses")
+          .select("id, number, street, status, notes, updated_at, neighborhood:session_id(neighborhood)")
+          .eq("rep_id", user.id)
+          .in("status", ["answered", "no_answer"])
+          .not("notes", "eq", "")
+          .order("updated_at", { ascending: false }),
       ]);
-      setData({ sessions: sessions || [], leads: leads || [] });
+      setData({ sessions: sessions || [], leads: leads || [], followUpHouses: followUpHouses || [] });
       setLoading(false);
     }
     load();
@@ -1204,7 +1210,9 @@ function StatsTab({ user, statsRefreshKey }) {
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><div className="text-cyan-400 text-sm font-mono animate-pulse">Loading stats…</div></div>;
 
-  const { sessions, leads } = data;
+  const { sessions, leads, followUpHouses } = data;
+  const needsFollowUp     = followUpHouses.filter(h => h.status === "answered");
+  const noAnswerWithNotes = followUpHouses.filter(h => h.status === "no_answer");
   const totalDoors    = sessions.reduce((s, r) => s + (r.doors_knocked  || 0), 0);
   const totalAnswered = sessions.reduce((s, r) => s + (r.doors_answered || 0), 0);
   const totalLeads    = sessions.reduce((s, r) => s + (r.leads_count    || 0), 0);
@@ -1365,6 +1373,7 @@ function StatsTab({ user, statsRefreshKey }) {
         )}
 
         {section === "leads" && (
+          <>
           <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
               <span className="text-white font-bold text-sm">My Leads</span>
@@ -1398,6 +1407,53 @@ function StatsTab({ user, statsRefreshKey }) {
                 </div>
               )}
           </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
+              <span className="text-white font-bold text-sm">Needs Follow Up</span>
+              <span className="text-gray-500 text-xs">{needsFollowUp.length}</span>
+            </div>
+            {needsFollowUp.length === 0
+              ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+              : (
+                <div className="divide-y divide-gray-800">
+                  {needsFollowUp.map(h => (
+                    <div key={h.id} className="px-5 py-3.5">
+                      <div className="flex justify-between items-start mb-0.5">
+                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                      </div>
+                      {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
+                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
+              <span className="text-white font-bold text-sm">No Answer (with notes)</span>
+              <span className="text-gray-500 text-xs">{noAnswerWithNotes.length}</span>
+            </div>
+            {noAnswerWithNotes.length === 0
+              ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+              : (
+                <div className="divide-y divide-gray-800">
+                  {noAnswerWithNotes.map(h => (
+                    <div key={h.id} className="px-5 py-3.5">
+                      <div className="flex justify-between items-start mb-0.5">
+                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                      </div>
+                      {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
+                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+          </>
         )}
 
         {section === "sessions" && (
@@ -1701,15 +1757,26 @@ function HeatmapTab() {
 // LEADS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 function LeadsTab() {
-  const [leads,         setLeads]         = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [filterGrade,   setFilterGrade]   = useState("ALL");
-  const [filterRep,     setFilterRep]     = useState("ALL");
-  const [filterService, setFilterService] = useState("ALL");
+  const [leads,           setLeads]           = useState([]);
+  const [followUpHouses,  setFollowUpHouses]  = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [filterGrade,     setFilterGrade]     = useState("ALL");
+  const [filterRep,       setFilterRep]       = useState("ALL");
+  const [filterService,   setFilterService]   = useState("ALL");
 
   useEffect(() => {
-    supabase.from("leads").select("*, profiles(name, color, avatar)").order("created_at", { ascending: false })
-      .then(({ data }) => { setLeads(data || []); setLoading(false); });
+    Promise.all([
+      supabase.from("leads").select("*, profiles(name, color, avatar)").order("created_at", { ascending: false }),
+      supabase.from("houses")
+        .select("id, number, street, status, notes, updated_at, rep:rep_id(name, color), session:session_id(neighborhood)")
+        .in("status", ["answered", "no_answer"])
+        .not("notes", "eq", "")
+        .order("updated_at", { ascending: false }),
+    ]).then(([{ data: leadsData }, { data: housesData }]) => {
+      setLeads(leadsData || []);
+      setFollowUpHouses(housesData || []);
+      setLoading(false);
+    });
   }, []);
 
   if (loading) return <Spinner />;
@@ -1722,6 +1789,8 @@ function LeadsTab() {
   );
   const counts       = Object.fromEntries(Object.keys(GRADES).map(g   => [g, leads.filter(l => l.grade   === g).length]));
   const serviceCounts= Object.fromEntries(Object.keys(SERVICES).map(s => [s, leads.filter(l => l.service === s).length]));
+  const needsFollowUp     = followUpHouses.filter(h => h.status === "answered");
+  const noAnswerWithNotes = followUpHouses.filter(h => h.status === "no_answer");
 
   return (
     <div className="space-y-4">
@@ -1791,6 +1860,64 @@ function LeadsTab() {
           ))}
           {filtered.length === 0 && <div className="px-5 py-10 text-center text-gray-600 text-sm">No leads match this filter.</div>}
         </div>
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
+          <span className="text-white font-bold text-sm">Needs Follow Up</span>
+          <span className="text-gray-500 text-xs">{needsFollowUp.length}</span>
+        </div>
+        {needsFollowUp.length === 0
+          ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+          : (
+            <div className="divide-y divide-gray-800">
+              {needsFollowUp.map(h => (
+                <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
+                  <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                      <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                    </div>
+                    <div className="text-xs mb-0.5">
+                      {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
+                      <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
+                    </div>
+                    <div className="text-gray-400 text-xs italic">{h.notes}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
+          <span className="text-white font-bold text-sm">No Answer (with notes)</span>
+          <span className="text-gray-500 text-xs">{noAnswerWithNotes.length}</span>
+        </div>
+        {noAnswerWithNotes.length === 0
+          ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+          : (
+            <div className="divide-y divide-gray-800">
+              {noAnswerWithNotes.map(h => (
+                <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
+                  <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                      <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                    </div>
+                    <div className="text-xs mb-0.5">
+                      {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
+                      <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
+                    </div>
+                    <div className="text-gray-400 text-xs italic">{h.notes}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
     </div>
   );
