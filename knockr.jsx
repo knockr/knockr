@@ -1185,9 +1185,10 @@ function HouseModal({ house, onUpdate, onClose }) {
 // STATS TAB — loads from Supabase
 // ══════════════════════════════════════════════════════════════════════════════
 function StatsTab({ user, statsRefreshKey }) {
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState("overview");
+  const [data,       setData]       = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [section,    setSection]    = useState("overview");
+  const [leadsView,  setLeadsView]  = useState("leads");
 
   useEffect(() => {
     setLoading(true);
@@ -1374,85 +1375,89 @@ function StatsTab({ user, statsRefreshKey }) {
 
         {section === "leads" && (
           <>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-              <span className="text-white font-bold text-sm">My Leads</span>
-              <span className="text-gray-500 text-xs">{leads.length} total</span>
-            </div>
-            {leads.length === 0
-              ? <div className="px-5 py-10 text-center text-gray-600 text-sm">No leads yet. Start a session to capture leads.</div>
-              : (
-                <div className="divide-y divide-gray-800">
-                  {leads.map(lead => {
-                    const gcfg = GRADES[lead.grade];
-                    const scfg = SERVICES[lead.service];
-                    return (
-                      <div key={lead.id} className="px-5 py-3.5 flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0"
-                          style={{ background: gcfg.bg, color: gcfg.color, border: `1px solid ${gcfg.color}44` }}>{lead.grade}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                            <span className="text-white font-bold text-sm">{lead.name || "—"}</span>
-                            {scfg && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold"
-                              style={{ background: scfg.bg, color: scfg.color, border: `1px solid ${scfg.color}33` }}>{lead.service}</span>}
+          <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1">
+            {[["leads", "My Leads", leads.length], ["followup", "Needs Follow Up", needsFollowUp.length], ["noanswer", "No Answer", noAnswerWithNotes.length]].map(([k, l, n]) => (
+              <button key={k} onClick={() => setLeadsView(k)}
+                className="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+                style={leadsView === k ? { background: user.color + "22", color: user.color } : { color: "#4b5563" }}>
+                {l} ({n})
+              </button>
+            ))}
+          </div>
+
+          {leadsView === "leads" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              {leads.length === 0
+                ? <div className="px-5 py-10 text-center text-gray-600 text-sm">No leads yet. Start a session to capture leads.</div>
+                : (
+                  <div className="divide-y divide-gray-800">
+                    {leads.map(lead => {
+                      const gcfg = GRADES[lead.grade];
+                      const scfg = SERVICES[lead.service];
+                      return (
+                        <div key={lead.id} className="px-5 py-3.5 flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0"
+                            style={{ background: gcfg.bg, color: gcfg.color, border: `1px solid ${gcfg.color}44` }}>{lead.grade}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                              <span className="text-white font-bold text-sm">{lead.name || "—"}</span>
+                              {scfg && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold"
+                                style={{ background: scfg.bg, color: scfg.color, border: `1px solid ${scfg.color}33` }}>{lead.service}</span>}
+                            </div>
+                            <div className="text-gray-400 text-xs">{lead.address}</div>
+                            <div className="text-gray-500 text-xs">{lead.phone} · {lead.neighborhood}</div>
+                            {lead.note && <div className="text-gray-500 text-xs italic mt-0.5">{lead.note}</div>}
                           </div>
-                          <div className="text-gray-400 text-xs">{lead.address}</div>
-                          <div className="text-gray-500 text-xs">{lead.phone} · {lead.neighborhood}</div>
-                          {lead.note && <div className="text-gray-500 text-xs italic mt-0.5">{lead.note}</div>}
+                          <div className="text-gray-600 text-xs flex-shrink-0 pt-0.5">{formatDate(lead.created_at)}</div>
                         </div>
-                        <div className="text-gray-600 text-xs flex-shrink-0 pt-0.5">{formatDate(lead.created_at)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-          </div>
-
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-              <span className="text-white font-bold text-sm">Needs Follow Up</span>
-              <span className="text-gray-500 text-xs">{needsFollowUp.length}</span>
+                      );
+                    })}
+                  </div>
+                )}
             </div>
-            {needsFollowUp.length === 0
-              ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
-              : (
-                <div className="divide-y divide-gray-800">
-                  {needsFollowUp.map(h => (
-                    <div key={h.id} className="px-5 py-3.5">
-                      <div className="flex justify-between items-start mb-0.5">
-                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
-                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
-                      </div>
-                      {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
-                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
+          )}
 
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-              <span className="text-white font-bold text-sm">No Answer (with notes)</span>
-              <span className="text-gray-500 text-xs">{noAnswerWithNotes.length}</span>
-            </div>
-            {noAnswerWithNotes.length === 0
-              ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
-              : (
-                <div className="divide-y divide-gray-800">
-                  {noAnswerWithNotes.map(h => (
-                    <div key={h.id} className="px-5 py-3.5">
-                      <div className="flex justify-between items-start mb-0.5">
-                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
-                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+          {leadsView === "followup" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              {needsFollowUp.length === 0
+                ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+                : (
+                  <div className="divide-y divide-gray-800">
+                    {needsFollowUp.map(h => (
+                      <div key={h.id} className="px-5 py-3.5">
+                        <div className="flex justify-between items-start mb-0.5">
+                          <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                          <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                        </div>
+                        {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
+                        <div className="text-gray-400 text-xs italic">{h.notes}</div>
                       </div>
-                      {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
-                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
+
+          {leadsView === "noanswer" && (
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+              {noAnswerWithNotes.length === 0
+                ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+                : (
+                  <div className="divide-y divide-gray-800">
+                    {noAnswerWithNotes.map(h => (
+                      <div key={h.id} className="px-5 py-3.5">
+                        <div className="flex justify-between items-start mb-0.5">
+                          <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                          <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                        </div>
+                        {h.neighborhood?.neighborhood && <div className="text-gray-500 text-xs mb-0.5">{h.neighborhood.neighborhood}</div>}
+                        <div className="text-gray-400 text-xs italic">{h.notes}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          )}
           </>
         )}
 
@@ -1763,6 +1768,7 @@ function LeadsTab() {
   const [filterGrade,     setFilterGrade]     = useState("ALL");
   const [filterRep,       setFilterRep]       = useState("ALL");
   const [filterService,   setFilterService]   = useState("ALL");
+  const [leadsView,       setLeadsView]       = useState("leads");
 
   useEffect(() => {
     Promise.all([
@@ -1834,91 +1840,95 @@ function LeadsTab() {
           ))}
         </div>
       </div>
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-          <span className="text-white font-bold text-sm">All Leads</span>
-          <span className="text-gray-500 text-xs">{filtered.length} results</span>
-        </div>
-        <div className="divide-y divide-gray-800">
-          {filtered.map(lead => (
-            <div key={lead.id} className="px-5 py-3.5 flex items-start gap-3">
-              <AdminGradeBadge grade={lead.grade} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="text-white font-bold text-sm">{lead.name || "—"}</span>
-                  <ServiceTag service={lead.service} />
+      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1">
+        {[["leads", "My Leads", filtered.length], ["followup", "Needs Follow Up", needsFollowUp.length], ["noanswer", "No Answer", noAnswerWithNotes.length]].map(([k, l, n]) => (
+          <button key={k} onClick={() => setLeadsView(k)}
+            className="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+            style={leadsView === k ? { background: "#00e5ff22", color: "#00e5ff" } : { color: "#4b5563" }}>
+            {l} ({n})
+          </button>
+        ))}
+      </div>
+
+      {leadsView === "leads" && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="divide-y divide-gray-800">
+            {filtered.map(lead => (
+              <div key={lead.id} className="px-5 py-3.5 flex items-start gap-3">
+                <AdminGradeBadge grade={lead.grade} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="text-white font-bold text-sm">{lead.name || "—"}</span>
+                    <ServiceTag service={lead.service} />
+                  </div>
+                  <div className="text-gray-400 text-xs">{lead.address} · {lead.phone}</div>
+                  <div className="text-xs mt-0.5 flex gap-2">
+                    <span className="text-gray-600">{lead.neighborhood}</span>
+                    <span className="text-gray-700">·</span>
+                    <span style={{ color: lead.profiles?.color || "#9ca3af" }}>{lead.profiles?.name || "—"}</span>
+                  </div>
                 </div>
-                <div className="text-gray-400 text-xs">{lead.address} · {lead.phone}</div>
-                <div className="text-xs mt-0.5 flex gap-2">
-                  <span className="text-gray-600">{lead.neighborhood}</span>
-                  <span className="text-gray-700">·</span>
-                  <span style={{ color: lead.profiles?.color || "#9ca3af" }}>{lead.profiles?.name || "—"}</span>
-                </div>
+                <div className="text-gray-600 text-xs flex-shrink-0">{formatDate(lead.created_at)}</div>
               </div>
-              <div className="text-gray-600 text-xs flex-shrink-0">{formatDate(lead.created_at)}</div>
-            </div>
-          ))}
-          {filtered.length === 0 && <div className="px-5 py-10 text-center text-gray-600 text-sm">No leads match this filter.</div>}
+            ))}
+            {filtered.length === 0 && <div className="px-5 py-10 text-center text-gray-600 text-sm">No leads match this filter.</div>}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-          <span className="text-white font-bold text-sm">Needs Follow Up</span>
-          <span className="text-gray-500 text-xs">{needsFollowUp.length}</span>
-        </div>
-        {needsFollowUp.length === 0
-          ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
-          : (
-            <div className="divide-y divide-gray-800">
-              {needsFollowUp.map(h => (
-                <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-0.5">
-                      <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
-                      <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+      {leadsView === "followup" && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          {needsFollowUp.length === 0
+            ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+            : (
+              <div className="divide-y divide-gray-800">
+                {needsFollowUp.map(h => (
+                  <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
+                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-0.5">
+                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                      </div>
+                      <div className="text-xs mb-0.5">
+                        {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
+                        <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
+                      </div>
+                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
                     </div>
-                    <div className="text-xs mb-0.5">
-                      {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
-                      <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
-                    </div>
-                    <div className="text-gray-400 text-xs italic">{h.notes}</div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
 
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex justify-between">
-          <span className="text-white font-bold text-sm">No Answer (with notes)</span>
-          <span className="text-gray-500 text-xs">{noAnswerWithNotes.length}</span>
-        </div>
-        {noAnswerWithNotes.length === 0
-          ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
-          : (
-            <div className="divide-y divide-gray-800">
-              {noAnswerWithNotes.map(h => (
-                <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-0.5">
-                      <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
-                      <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+      {leadsView === "noanswer" && (
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          {noAnswerWithNotes.length === 0
+            ? <div className="px-5 py-6 text-center text-gray-600 text-sm">No houses with notes yet.</div>
+            : (
+              <div className="divide-y divide-gray-800">
+                {noAnswerWithNotes.map(h => (
+                  <div key={h.id} className="px-5 py-3.5 flex items-start gap-3">
+                    <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: h.rep?.color || "#9ca3af" }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-0.5">
+                        <span className="text-white font-bold text-sm">{h.number} {h.street}</span>
+                        <span className="text-gray-600 text-xs flex-shrink-0 ml-2">{formatDate(h.updated_at)}</span>
+                      </div>
+                      <div className="text-xs mb-0.5">
+                        {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
+                        <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
+                      </div>
+                      <div className="text-gray-400 text-xs italic">{h.notes}</div>
                     </div>
-                    <div className="text-xs mb-0.5">
-                      {h.session?.neighborhood && <span className="text-gray-500">{h.session.neighborhood} · </span>}
-                      <span style={{ color: h.rep?.color || "#9ca3af" }}>{h.rep?.name || "—"}</span>
-                    </div>
-                    <div className="text-gray-400 text-xs italic">{h.notes}</div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
+                ))}
+              </div>
+            )}
+        </div>
+      )}
     </div>
   );
 }
